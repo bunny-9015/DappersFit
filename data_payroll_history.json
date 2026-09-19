@@ -1,0 +1,15 @@
+[
+  {
+    "id": "pay-1785692026477-787",
+    "employeeId": "emp-1784187312734-878141",
+    "employeeName": "Lokesh Kamatham",
+    "role": "Operations Manager",
+    "month": "July 2026",
+    "salaryAmount": 6000,
+    "incentiveAmount": 1820,
+    "totalPaid": 7820,
+    "payoutDate": "2 Aug 2026, 5:33 pm",
+    "status": "Paid",
+    "notes": "Monthly salary approved for July 2026"
+  }
+]

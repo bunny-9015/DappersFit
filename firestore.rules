@@ -1,0 +1,38 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /orders/{document} {
+      allow read, write: if true;
+    }
+    match /employees/{document} {
+      allow read, write: if true;
+    }
+    match /products/{document} {
+      allow read, write: if true;
+    }
+    match /customers/{document} {
+      allow read, write: if true;
+    }
+    match /shiprocket_wallet/{document} {
+      allow read, write: if true;
+    }
+    match /incentive_resets/{document} {
+      allow read, write: if true;
+    }
+    match /incentive_history/{document} {
+      allow read, write: if true;
+    }
+    match /payroll_paid_dates/{document} {
+      allow read, write: if true;
+    }
+    match /payroll_history/{document} {
+      allow read, write: if true;
+    }
+    match /replacements/{document} {
+      allow read, write: if true;
+    }
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

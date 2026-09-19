@@ -1,0 +1,90 @@
+[
+  {
+    "stock": 500,
+    "weight": 0.8,
+    "id": "p-1785686789027-934680",
+    "name": "drn",
+    "sku": "drn ",
+    "category": "Drone Action Cameras"
+  },
+  {
+    "sku": "wg",
+    "id": "p-1785686817129-150850",
+    "category": "Drone Action Cameras",
+    "name": "wg",
+    "weight": 2,
+    "stock": 500
+  },
+  {
+    "category": "Drone Action Cameras",
+    "stock": 500,
+    "sku": "ac",
+    "id": "p-1785686852004-452123",
+    "weight": 0.8,
+    "name": "ac"
+  },
+  {
+    "name": "gs m22",
+    "category": "Drone Action Cameras",
+    "weight": 0.8,
+    "id": "p-1785686881044-925546",
+    "sku": "m22",
+    "stock": 500
+  },
+  {
+    "sku": "m15",
+    "category": "Drone Action Cameras",
+    "id": "p-1785686907804-1721",
+    "name": "gs",
+    "weight": 0.8,
+    "stock": 500
+  },
+  {
+    "category": "Drone Action Cameras",
+    "name": "drn cmb",
+    "sku": "drn cmb",
+    "stock": 500,
+    "id": "p-1785768292674-869029",
+    "weight": 1
+  },
+  {
+    "id": "p-1786378571938-665879",
+    "category": "Other / Custom",
+    "weight": 1,
+    "sku": "Erlx",
+    "stock": 50,
+    "name": "Erlx"
+  },
+  {
+    "category": "Other / Custom",
+    "name": "Erlx og",
+    "id": "p-1789301892281-263535",
+    "weight": 1,
+    "sku": "og",
+    "stock": 50
+  },
+  {
+    "stock": 50,
+    "sku": "Fos",
+    "name": "Fossil ",
+    "category": "Other / Custom",
+    "weight": 1,
+    "id": "p-1789487976524-51489"
+  },
+  {
+    "name": "Desiel ",
+    "sku": "D",
+    "stock": 50,
+    "category": "Drone Action Cameras",
+    "weight": 1,
+    "id": "p-1789489979287-922571"
+  },
+  {
+    "name": "rado",
+    "category": "Drone Action Cameras",
+    "weight": 1,
+    "sku": "rado",
+    "stock": 50,
+    "id": "p-1789796787448-938204"
+  }
+]

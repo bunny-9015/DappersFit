@@ -1,0 +1,69 @@
+{
+  "entities": {
+    "order": {
+      "title": "Order",
+      "description": "Logistics orders for courier booking and label generation",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "orderNumber": { "type": "string" },
+        "customerName": { "type": "string" },
+        "status": {
+          "type": "string",
+          "enum": ["pending", "processing", "processed", "booked", "awb_assigned", "shipped", "delivered", "cancelled", "failed"]
+        },
+        "totalAmount": { "type": "number" },
+        "awbCode": { "type": "string" },
+        "shipmentId": { "type": "string" },
+        "shiprocketOrderId": { "type": "string" },
+        "labelUrl": { "type": "string" },
+        "errorMessage": { "type": "string" }
+      },
+      "required": ["id", "orderNumber", "customerName", "status", "totalAmount"]
+    },
+    "replacement": {
+      "title": "Replacement",
+      "description": "Product replacement and exchange requests",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "ticketNumber": { "type": "string" },
+        "type": { "type": "string", "enum": ["replacement", "exchange"] },
+        "customerName": { "type": "string" },
+        "customerPhone": { "type": "string" },
+        "productName": { "type": "string" },
+        "reason": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "approved", "rejected", "done"] },
+        "flag": { "type": "string", "enum": ["red", "orange", "green", "none"] },
+        "flagReason": { "type": "string" }
+      },
+      "required": ["id", "ticketNumber", "type", "customerName", "customerPhone", "productName", "reason", "status"]
+    },
+    "wallet": {
+      "title": "ShiprocketWallet",
+      "description": "Shiprocket wallet balance and synchronization details",
+      "type": "object",
+      "properties": {
+        "available_balance": { "type": "number" },
+        "hold_amount": { "type": "number" },
+        "last_sync_time": { "type": "string" },
+        "is_simulated": { "type": "boolean" }
+      },
+      "required": ["available_balance"]
+    }
+  },
+  "firestore": {
+    "/orders/{orderId}": {
+      "schema": "order",
+      "description": "Individual order records containing fulfillment status, Shiprocket IDs, and label URLs"
+    },
+    "/replacements/{replacementId}": {
+      "schema": "replacement",
+      "description": "Individual replacement and exchange request records"
+    },
+    "/shiprocket_wallet/{document}": {
+      "schema": "wallet",
+      "description": "Shiprocket wallet status records"
+    }
+  }
+}

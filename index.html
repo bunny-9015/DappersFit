@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Dappersfit</title>
+    <meta name="description" content="Logistics fulfillment dashboard with Shiprocket integration for courier order booking, AI Phase unstructured data intake, priority color flags (Red, Orange, Green), replacements & exchange tracking with mandatory phone and optional address." />
+  </head>
+  <body>
+    <script>
+      // Gracefully prevent benign Vite dev WebSocket connection errors in sandboxed preview from raising unhandled rejections
+      window.addEventListener('unhandledrejection', function (event) {
+        var reason = event.reason;
+        var msg = (reason && (reason.message || String(reason))) || '';
+        if (msg.includes('WebSocket') || msg.includes('closed without opened') || msg.includes('[vite]')) {
+          event.preventDefault();
+        }
+      });
+      window.addEventListener('error', function (event) {
+        var msg = event.message || '';
+        if (msg.includes('[vite]') || msg.includes('WebSocket')) {
+          event.preventDefault();
+        }
+      });
+    </script>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
+

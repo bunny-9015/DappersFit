@@ -1,0 +1,8 @@
+{
+  "name": "Dappersfit",
+  "description": "Logistics fulfillment dashboard with Shiprocket integration for courier order booking, AI Phase unstructured data intake, priority color flags (Red, Orange, Green), replacements & exchange tracking with mandatory phone and optional address.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
