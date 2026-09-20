@@ -1281,24 +1281,80 @@ app.delete('/api/orders/:id', async (req, res) => {
 });
 
 // API route: Get current employees
-app.get('/api/employees', (req, res) => {
+app.get('/api/employees', async (req, res) => {
+  if (isFirebaseEnabled && firestoreDb) {
+    try {
+      const col = collection(firestoreDb, 'employees');
+      const snapshot = await getDocs(col);
+      const cloudEmployees: any[] = [];
+      snapshot.forEach((d) => {
+        const data = d.data();
+        if (data && data.id) cloudEmployees.push(data);
+      });
+      if (cloudEmployees.length > 0) {
+        mockEmployees = cloudEmployees;
+      }
+    } catch (err: any) {
+      console.warn('[Firebase] Querying employees failed, serving local cache:', err.message);
+    }
+  }
   res.json({ employees: mockEmployees });
 });
 
 // API route: Create/Update an employee
-app.post('/api/employees', (req, res) => {
+app.post('/api/employees', async (req, res) => {
   const emp = req.body;
   if (!emp.id) {
     emp.id = `emp-${Date.now()}`;
   }
   const existingIdx = mockEmployees.findIndex(e => e.id === emp.id);
+  let targetEmp: any;
   if (existingIdx >= 0) {
     mockEmployees[existingIdx] = { ...mockEmployees[existingIdx], ...emp };
+    targetEmp = mockEmployees[existingIdx];
   } else {
     mockEmployees.push(emp);
+    targetEmp = emp;
   }
-  saveEmployeesToFile();
-  res.json({ success: true, employee: emp, employees: mockEmployees });
+
+  if (isFirebaseEnabled && firestoreDb) {
+    try {
+      await setDoc(doc(firestoreDb, 'employees', String(targetEmp.id)), sanitizeForFirestore(targetEmp));
+    } catch (err) {
+      console.error('[Firebase] Direct write of employee failed:', err);
+    }
+  }
+
+  await saveEmployeesToFile();
+  res.json({ success: true, employee: targetEmp, employees: mockEmployees });
+});
+
+// API route: Edit employee details and credentials
+app.put('/api/employees/:id', async (req, res) => {
+  const { id } = req.params;
+  const updates = req.body || {};
+  const existingIdx = mockEmployees.findIndex(e => e && String(e.id) === String(id));
+  if (existingIdx === -1) {
+    return res.status(404).json({ success: false, error: 'Employee not found' });
+  }
+
+  mockEmployees[existingIdx] = {
+    ...mockEmployees[existingIdx],
+    ...updates,
+    id: mockEmployees[existingIdx].id // Ensure ID remains immutable
+  };
+  const updatedEmp = mockEmployees[existingIdx];
+
+  if (isFirebaseEnabled && firestoreDb) {
+    try {
+      await setDoc(doc(firestoreDb, 'employees', String(id)), sanitizeForFirestore(updatedEmp));
+    } catch (err) {
+      console.error('[Firebase] Direct update of employee failed:', err);
+    }
+  }
+
+  await saveEmployeesToFile();
+  res.json({ success: true, employee: updatedEmp, employees: mockEmployees });
 });
 
 // API route: Delete an employee
