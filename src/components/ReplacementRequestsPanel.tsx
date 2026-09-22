@@ -300,7 +300,7 @@ export default function ReplacementRequestsPanel({ user }: ReplacementRequestsPa
     setAiError(null);
 
     try {
-      const res = await fetch('/api/replacements/ai-parse', {
+      const res = await fetch('/api/gemini/parse-replacement', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text: input })
@@ -325,7 +325,7 @@ export default function ReplacementRequestsPanel({ user }: ReplacementRequestsPa
     if (!inModalAiText.trim()) return;
     setInModalAiLoading(true);
     try {
-      const res = await fetch('/api/replacements/ai-parse', {
+      const res = await fetch('/api/gemini/parse-replacement', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text: inModalAiText })

@@ -386,10 +386,10 @@ export default function OrdersTable({
       address: {
         name: customerName.trim(),
         phone: phone.trim(),
-        address: addressText || "Flat 402, Sunshine Heights, MG Road",
-        city: city || "Pune",
-        state: state || "Maharashtra",
-        pincode: pincode || "411001",
+        address: addressText || "",
+        city: city || "",
+        state: state || "",
+        pincode: pincode || "",
         email: customerEmail
       },
       items: [

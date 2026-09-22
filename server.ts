@@ -1280,7 +1280,32 @@ app.delete('/api/orders/:id', async (req, res) => {
   return res.json({ success: true, message: 'Order deleted successfully', orders: mockOrders });
 });
 
-// API route: Get current employees
+// API route: Update an order by ID
+app.put('/api/orders/:id', async (req, res) => {
+  const { id } = req.params;
+  const updates = req.body;
+  const idx = mockOrders.findIndex((o: any) => o && String(o.id) === String(id));
+  if (idx === -1) {
+    return res.status(404).json({ success: false, error: 'Order not found' });
+  }
+
+  // Merge updates into existing order
+  mockOrders[idx] = { ...mockOrders[idx], ...updates, id: mockOrders[idx].id };
+  const updatedOrder = mockOrders[idx];
+
+  if (isFirebaseEnabled && firestoreDb) {
+    try {
+      await setDoc(doc(firestoreDb, 'orders', String(id)), sanitizeForFirestore(updatedOrder));
+    } catch (err) {
+      console.error('[Firebase] Failed to update order in Firestore:', err);
+    }
+  }
+
+  await saveOrdersToFile();
+  return res.json({ success: true, order: updatedOrder });
+});
+
+
 app.get('/api/employees', async (req, res) => {
   if (isFirebaseEnabled && firestoreDb) {
     try {
@@ -2728,11 +2753,11 @@ function parseOrderLocally(text: string) {
   
   // 1. Phone number (10 digits)
   const phoneMatch = text.match(/(?:\+91|0)?[6-9]\d{9}/);
-  const phone = phoneMatch ? phoneMatch[0].replace(/^(?:\+91|0)/, '') : '9876543210';
+  const phone = phoneMatch ? phoneMatch[0].replace(/^(?:\+91|0)/, '') : '';
   
   // 2. Pincode (6 digits)
   const pinMatch = text.match(/\b\d{6}\b/);
-  const pincode = pinMatch ? pinMatch[0] : '411001';
+  const pincode = pinMatch ? pinMatch[0] : '';
   
   // 3. Name (usually first line or before the phone/address)
   let customerName = '';
@@ -2748,8 +2773,8 @@ function parseOrderLocally(text: string) {
   }
 
   // 4. City & State (parse from pincode or match standard cities)
-  let city = 'Pune';
-  let state = 'Maharashtra';
+  let city = '';
+  let state = '';
   
   if (pincode.startsWith('56') || textClean.toLowerCase().includes('bangalore') || textClean.toLowerCase().includes('bengaluru')) {
     city = 'Bangalore';
@@ -2788,8 +2813,8 @@ function parseOrderLocally(text: string) {
   }
 
   // 6. Item parsing: look for lines with product name and price
-  let items = [{ name: 'Drone 4K Action Camera Ultra HD', sku: 'DRN-ACT-4K', quantity: 1, price: 4999 }];
-  let totalAmount = 4999;
+  let items: any[] = [];
+  let totalAmount = 0;
 
   const priceMatches = [...textClean.matchAll(/(?:rs\.?|inr|₹)?\s*(\d{3,5})\b/gi)];
   const numbers = priceMatches.map(m => parseInt(m[1])).filter(n => n >= 200 && n <= 50000);
@@ -2798,7 +2823,7 @@ function parseOrderLocally(text: string) {
     const price = numbers[0];
     totalAmount = price;
     
-    let itemName = 'Drone 4K Action Camera';
+    let itemName = '';
     if (textClean.toLowerCase().includes('projector')) {
       itemName = 'Smart Portable 4K LED Projector';
     } else if (textClean.toLowerCase().includes('drone') || textClean.toLowerCase().includes('camera')) {
@@ -2811,12 +2836,14 @@ function parseOrderLocally(text: string) {
       itemName = 'High-Speed 4WD RC Car Offroad';
     }
     
-    items = [{
-      name: itemName,
-      sku: itemName.toUpperCase().replace(/\s+/g, '-').slice(0, 10),
-      quantity: 1,
-      price: price
-    }];
+    if (itemName !== '') {
+      items = [{
+        name: itemName,
+        sku: itemName.toUpperCase().replace(/\s+/g, '-').slice(0, 10),
+        quantity: 1,
+        price: price
+      }];
+    }
   }
 
   return {
@@ -2828,7 +2855,7 @@ function parseOrderLocally(text: string) {
       city,
       state,
       pincode,
-      email: `${customerName.toLowerCase().replace(/\s+/g, '')}@gmail.com`
+      email: customerName ? `${customerName.toLowerCase().replace(/\s+/g, '')}@gmail.com` : ''
     },
     items,
     totalAmount
@@ -2912,6 +2939,61 @@ ${text}
     } catch (fallbackErr: any) {
       res.status(500).json({ error: 'AI order parsing failed to respond.', details: fallbackErr.message });
     }
+  }
+});
+
+// API Route: AI raw replacement ticket parser
+app.post('/api/gemini/parse-replacement', async (req, res) => {
+  const { text } = req.body;
+  if (!text) {
+    return res.status(400).json({ error: 'Text prompt content is empty.' });
+  }
+
+  const apiKey = process.env.GEMINI_API_KEY || 'MOCK_API_KEY';
+  if (apiKey === 'MOCK_API_KEY' || !apiKey) {
+    console.log('[Replacement Parser] Bypassing Gemini API and parsing locally (Sandbox mode)');
+    return res.json({ 
+      success: true, 
+      parsed: {
+        customerPhone: text.match(/\d{10}/)?.[0] ?? '',
+        reason: text,
+      } 
+    });
+  }
+
+  try {
+    const prompt = `Parse the following unstructured raw replacement/exchange ticket request text. Extract the details perfectly.
+
+Raw text to analyze:
+"""
+${text}
+"""`;
+
+    const response = await generateContentWithRetryAndFallback(prompt, {
+      systemInstruction: `You are an expert parser for customer support replacement tickets. Extract details into JSON. Field types: customerName (string), customerPhone (string, 10 digits), orderNumber (string), productName (string), reason (string), flag (string, one of: "Red", "Orange", "Green"), type (string, one of: "Replacement", "Exchange"). If a field is missing, provide empty string (for strings) or leave null.`,
+      responseMimeType: 'application/json',
+      responseSchema: {
+        type: Type.OBJECT,
+        required: ['customerPhone'],
+        properties: {
+          customerName: { type: Type.STRING },
+          customerPhone: { type: Type.STRING },
+          orderNumber: { type: Type.STRING },
+          productName: { type: Type.STRING },
+          reason: { type: Type.STRING },
+          flag: { type: Type.STRING },
+          type: { type: Type.STRING }
+        }
+      }
+    });
+
+    const jsonStr = response.text?.trim() || '{}';
+    const parsedData = JSON.parse(jsonStr);
+
+    res.json({ success: true, parsed: parsedData });
+  } catch (error: any) {
+    console.warn('Gemini API parsing failed for replacement.', error.message);
+    res.status(500).json({ error: 'AI replacement parsing failed.' });
   }
 });
 
