@@ -2710,12 +2710,12 @@ app.delete('/api/customers/:id', (req, res) => {
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function generateContentWithRetryAndFallback(contents: string, config: any) {
-  const models = ['gemini-3.5-flash', 'gemini-3.1-flash-lite', 'gemini-flash-latest'];
+  const models = ['gemini-2.5-flash', 'gemini-1.5-flash'];
   let lastError: any = null;
 
   for (const model of models) {
-    let attempts = 3;
-    let delay = 1000;
+    let attempts = 2;
+    let delay = 500;
     
     for (let attempt = 1; attempt <= attempts; attempt++) {
       try {
