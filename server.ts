@@ -210,7 +210,7 @@ let tokenExpiry: number | null = null;
 // Store server-side settings dynamically with verified live Shiprocket credentials
 let serverSettings = {
   shiprocketEmail: process.env.SHIPROCKET_EMAIL || 'k.nithwik750@gmail.com',
-  shiprocketPassword: process.env.SHIPROCKET_PASSWORD || 't9p@Z5C6pb0HTXjCLP0dS%C*Spby8p3l',
+  shiprocketPassword: process.env.SHIPROCKET_PASSWORD || 'M0vice^bM^lfUsGMbGLqZb7GKMH22ehx',
   shiprocketToken: process.env.SHIPROCKET_TOKEN || ''
 };
 
