@@ -5025,21 +5025,15 @@ app.get('/book-courier', (req, res) => {
 async function startServer() {
   const isProduction = process.env.NODE_ENV === 'production' || !process.env.CONTROL_PLANE_PORT;
 
-  // Vite middleware in dev; serve static assets in production
-  if (!isProduction) {
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: 'spa'
-    });
-    app.use(vite.middlewares);
-  } else {
-    const distPath = path.join(process.cwd(), 'dist');
-    app.use(express.static(distPath));
-    // SPA Wildcard fallback
-    app.get('*', (req, res) => {
-      res.sendFile(path.join(distPath, 'index.html'));
-    });
-  }
+  // Frontend website has been explicitly disabled.
+  // We only serve the backend API for the mobile app now.
+  app.get('*', (req, res) => {
+    // Only intercept non-API routes, Express processes /api routes before this wildcard
+    if (req.path.startsWith('/api')) {
+      return res.status(404).json({ error: 'API endpoint not found' });
+    }
+    res.status(200).send('<h1>Dappersfit Backend API is active. Website is disabled.</h1>');
+  });
 
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`[Dappersfit Server] Booted successfully and running on port ${PORT}`);
