@@ -7,7 +7,8 @@ import express from 'express';
 import path from 'path';
 import fs from 'fs';
 import { createServer as createViteServer } from 'vite';
-import { GoogleGenAI, Type } from '@google/genai';
+import Anthropic from '@anthropic-ai/sdk';
+const Type = { OBJECT: 'object', STRING: 'string', ARRAY: 'array', INTEGER: 'integer', NUMBER: 'number' };
 import dotenv from 'dotenv';
 import { initializeApp } from 'firebase/app';
 import { initializeFirestore, collection, doc, getDoc, getDocs, setDoc, deleteDoc, setLogLevel } from 'firebase/firestore';
@@ -67,14 +68,9 @@ function sanitizeForFirestore(obj: any): any {
   return obj;
 }
 
-// Initialize Gemini API client on the server as per gemini-api skill instructions
-const ai = new GoogleGenAI({
-  apiKey: process.env.GEMINI_API_KEY || 'MOCK_API_KEY',
-  httpOptions: {
-    headers: {
-      'User-Agent': 'aistudio-build'
-    }
-  }
+// Initialize Anthropic API client
+const ai = new Anthropic({
+  apiKey: process.env.ANTHROPIC_API_KEY || 'MOCK_API_KEY',
 });
 
 const app = express();
@@ -213,9 +209,9 @@ let tokenExpiry: number | null = null;
 
 // Store server-side settings dynamically with verified live Shiprocket credentials
 let serverSettings = {
-  shiprocketEmail: process.env.SHIPROCKET_EMAIL || 'kamathamlokesh1234@gmail.com',
-  shiprocketPassword: process.env.SHIPROCKET_PASSWORD || 'HlI2GQf@206KrH43^yXc6^mo2RhO24I4',
-  shiprocketToken: process.env.SHIPROCKET_TOKEN || ''
+  shiprocketEmail: process.env.SHIPROCKET_EMAIL || 'k.nithwik750@gmail.com',
+  shiprocketPassword: process.env.SHIPROCKET_PASSWORD || '',
+  shiprocketToken: process.env.SHIPROCKET_TOKEN || 'vRKafL9qyp52xMa!GrXkIMJ&2BAZudM3'
 };
 
 // Central helper to retrieve active registered warehouse details from Shiprocket
@@ -2710,7 +2706,7 @@ app.delete('/api/customers/:id', (req, res) => {
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function generateContentWithRetryAndFallback(contents: string, config: any) {
-  const models = ['gemini-2.5-flash', 'gemini-1.5-flash'];
+  const models = ['claude-3-5-sonnet-20241022', 'claude-3-haiku-20240307'];
   let lastError: any = null;
 
   for (const model of models) {
@@ -2719,25 +2715,32 @@ async function generateContentWithRetryAndFallback(contents: string, config: any
     
     for (let attempt = 1; attempt <= attempts; attempt++) {
       try {
-        console.log(`[Gemini API] Attempting order parsing with model: ${model} (Attempt ${attempt}/${attempts})`);
-        const response = await ai.models.generateContent({
+        console.log(`[Anthropic API] Attempting parsing with model: ${model} (Attempt ${attempt}/${attempts})`);
+        const response = await ai.messages.create({
           model,
-          contents,
-          config,
+          max_tokens: 1024,
+          system: config.systemInstruction,
+          messages: [
+            { role: 'user', content: contents + "\n\nRespond ONLY with a valid JSON matching this schema:\n" + JSON.stringify(config.responseSchema, null, 2) }
+          ]
         });
-        console.log(`[Gemini API] Success using model: ${model}`);
-        return response;
+        console.log(`[Anthropic API] Success using model: ${model}`);
+        // Ensure we match the expected return structure for the caller
+        let text = '';
+        if (response.content && response.content.length > 0 && response.content[0].type === 'text') {
+          text = response.content[0].text;
+        }
+        return { text };
       } catch (err: any) {
         lastError = err;
-        console.error(`[Gemini API] Failure on model ${model} (Attempt ${attempt}/${attempts}):`, err.message || err);
+        console.error(`[Anthropic API] Failure on model ${model} (Attempt ${attempt}/${attempts}):`, err.message || err);
         
-        // If 400 bad request (like parameter/schema mismatch), do not retry this model
         if (err.status === 400 || err.statusCode === 400 || (err.message && err.message.includes('400'))) {
           break;
         }
 
         if (attempt < attempts) {
-          console.log(`[Gemini API] Retrying model ${model} in ${delay}ms...`);
+          console.log(`[Anthropic API] Retrying model ${model} in ${delay}ms...`);
           await sleep(delay);
           delay *= 2;
         }
@@ -2745,7 +2748,7 @@ async function generateContentWithRetryAndFallback(contents: string, config: any
     }
   }
   
-  throw lastError || new Error('All Gemini models and retry attempts failed.');
+  throw lastError || new Error('All Anthropic models and retry attempts failed.');
 }
 
 function parseOrderLocally(text: string) {
