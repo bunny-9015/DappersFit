@@ -210,8 +210,8 @@ let tokenExpiry: number | null = null;
 // Store server-side settings dynamically with verified live Shiprocket credentials
 let serverSettings = {
   shiprocketEmail: process.env.SHIPROCKET_EMAIL || 'k.nithwik750@gmail.com',
-  shiprocketPassword: process.env.SHIPROCKET_PASSWORD || '',
-  shiprocketToken: process.env.SHIPROCKET_TOKEN || 'vRKafL9qyp52xMa!GrXkIMJ&2BAZudM3'
+  shiprocketPassword: process.env.SHIPROCKET_PASSWORD || 't9p@Z5C6pb0HTXjCLP0dS%C*Spby8p3l',
+  shiprocketToken: process.env.SHIPROCKET_TOKEN || ''
 };
 
 // Central helper to retrieve active registered warehouse details from Shiprocket
