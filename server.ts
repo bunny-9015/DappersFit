@@ -16,6 +16,7 @@ import { initializeFirestore, collection, doc, getDoc, getDocs, setDoc, deleteDo
 dotenv.config();
 
 import { renderShippingLabelHtml } from './src/utils/shippingLabelTemplate';
+import { selectCourierCandidates } from './src/utils/courierSelector';
 
 setLogLevel('silent');
 
@@ -1202,6 +1203,18 @@ app.post('/api/orders', async (req, res) => {
     // Update existing order
     mockOrders[existingIdx] = { ...mockOrders[existingIdx], ...newOrder };
   } else {
+    // PREVENT DUPLICATES: Check if an active/pending order with same phone, name and amount already exists
+    const isDuplicate = mockOrders.find(o => {
+      const sameCustomer = o.customerName?.toLowerCase().trim() === newOrder.customerName?.toLowerCase().trim();
+      const samePhone = o.address?.phone === newOrder.address?.phone;
+      const sameAmount = Number(o.totalAmount) === Number(newOrder.totalAmount);
+      return sameCustomer && samePhone && sameAmount && (o.status === 'pending' || o.status === 'processing');
+    });
+    
+    if (isDuplicate) {
+      return res.status(409).json({ error: 'Duplicate order blocked.' });
+    }
+
     // Creating a new order
     // Ensure orderNumber is present and unique
     if (!newOrder.orderNumber) {
@@ -4010,65 +4023,8 @@ app.post('/api/shiprocket/order/priority-book', async (req, res) => {
       ];
     }
 
-    // 2. Determine Courier Sequence based on WG Exception
-    const items = orderToBook.items || [];
-    const isWG = items.some((item) => {
-      const name = (item.name || '').toLowerCase();
-      const sku = (item.sku || '').toLowerCase();
-      const tags = Array.isArray(item.tags) ? item.tags.map(t => String(t).toLowerCase()) : [];
-      return tags.includes('wg') || name.includes(' wg ') || name === 'wg' || name.startsWith('wg ') || name.endsWith(' wg') || name.includes('water gun') || sku.includes('wg');
-    });
-
-    let conditionSequence = [];
-    conditionSequence.push('DAPPERS');
-    
-    if (isWG) {
-      conditionSequence.push('DELIVERY_SURFACE_2KG');
-      conditionSequence.push('INDIA_POST');
-    } else {
-      conditionSequence.push('BLUEDART_AIR');
-      conditionSequence.push('BLUEDART_SURFACE');
-      conditionSequence.push('DELIVERY_AIR');
-      conditionSequence.push('DELIVERY_SURFACE');
-      conditionSequence.push('INDIA_POST');
-    }
-
-    const matchesCourierCondition = (c, condition) => {
-      const name = (c.courierName || '').toLowerCase();
-      switch (condition) {
-        case 'DAPPERS':
-          return name.includes('dappers');
-        case 'BLUEDART_AIR':
-          return name.includes('blue') && name.includes('dart') && (name.includes('air') || name.includes('express') || name.includes('premium'));
-        case 'BLUEDART_SURFACE':
-          return name.includes('blue') && name.includes('dart') && (name.includes('surface') || name.includes('ground') || name.includes('2kg') || name.includes('standard'));
-        case 'DELIVERY_AIR':
-          return (name.includes('delhivery') || name.includes('delievry') || name.includes('delivery')) && (name.includes('air') || name.includes('express') || name.includes('premium'));
-        case 'DELIVERY_SURFACE':
-          return (name.includes('delhivery') || name.includes('delievry') || name.includes('delivery')) && (name.includes('surface') || name.includes('ground') || (!name.includes('air') && !name.includes('express') && !name.includes('premium')));
-        case 'DELIVERY_SURFACE_2KG':
-          return (name.includes('delhivery') || name.includes('delievry') || name.includes('delivery')) && (name.includes('surface') || name.includes('ground')) && (name.includes('2kg') || name.includes('2 kg') || name.includes('2 kgs') || name.includes('2kgs'));
-        case 'INDIA_POST':
-          return name.includes('india post') || name.includes('speed post') || name.includes('business post');
-        default:
-          return false;
-      }
-    };
-
-    // 3. Build sequence of viable couriers from couriersList
-    let priorityCourierCandidates = [];
-    for (const condition of conditionSequence) {
-      const matched = couriersList.filter(c => matchesCourierCondition(c, condition));
-      if (matched.length > 0) {
-        matched.sort((a, b) => a.rate - b.rate);
-        priorityCourierCandidates.push(...matched);
-      }
-    }
-
-    // Filter duplicates while preserving the order of insertion
-    priorityCourierCandidates = priorityCourierCandidates.filter((c, index, self) => 
-      index === self.findIndex((t) => t.courierId === c.courierId)
-    );
+    // 2 & 3. Select couriers via configuration-driven Priority Courier module
+    let priorityCourierCandidates = selectCourierCandidates(orderToBook, couriersList);
 
     if (priorityCourierCandidates.length === 0) {
       return res.status(400).json({
@@ -4159,6 +4115,7 @@ app.post('/api/shiprocket/order/priority-book', async (req, res) => {
               assignedCourierName = awbData?.response?.data?.courier_name || candidate.courierName;
               successfulCourierId = candidate.courierId;
               bookedRate = candidate.rate;
+              console.log(`[Courier Assignment] Successfully assigned ${assignedCourierName} from Tier: ${candidate.tierName} (Rank: ${candidate.tierRank}, Order Type: ${candidate.orderType})`);
               break; // Success! Stop falling back.
             } else {
               lastAwbError = awbData?.response?.data?.awb_assign_error || awbData?.message || awbData?.response?.data?.message || 'Empty AWB code returned.';
@@ -4171,7 +4128,26 @@ app.post('/api/shiprocket/order/priority-book', async (req, res) => {
         }
 
         if (!awbCode) {
-          console.error('[Shiprocket Priority Booking Failed] All fallback sequence couriers failed to assign AWB.');
+          console.warn('[Shiprocket Priority Booking] All fallback sequence couriers failed. Attempting General Auto-Assign...');
+          try {
+             let autoAwbData = await shiprocket.rawRequest('/courier/assign/awb', 'POST', headers, { shipment_id: shipmentId });
+             let testAwbCode = autoAwbData?.response?.data?.awb_code || autoAwbData?.data?.awb_code || autoAwbData?.awb_code || autoAwbData?.response?.awb_code || '';
+             
+             if (testAwbCode) {
+               awbCode = testAwbCode;
+               assignedCourierName = autoAwbData?.response?.data?.courier_name || 'Shiprocket Auto-Assigned';
+               successfulCourierId = autoAwbData?.response?.data?.courier_company_id || 'AUTO';
+               console.log(`[Courier Assignment] Exhausted config tiers. Successfully Auto-Assigned courier: ${assignedCourierName}`);
+             } else {
+               lastAwbError = autoAwbData?.response?.data?.awb_assign_error || autoAwbData?.message || autoAwbData?.response?.data?.message || 'Empty AWB code returned on auto-assign.';
+             }
+          } catch (autoAwbErr: any) {
+             lastAwbError = autoAwbErr.message || String(autoAwbErr);
+          }
+        }
+
+        if (!awbCode) {
+          console.error('[Shiprocket Priority Booking Failed] All fallback sequence couriers AND Auto-Assign failed.');
           try {
              await shiprocket.rawRequest('/orders/cancel', 'POST', headers, { ids: [Number(shiprocketId) || shiprocketId] });
              console.log(`[Shiprocket] Successfully cancelled priority order ${shiprocketId} due to AWB fallback exhaustion.`);
@@ -4180,7 +4156,7 @@ app.post('/api/shiprocket/order/priority-book', async (req, res) => {
           }
           
           orderToBook.status = 'failed';
-          orderToBook.errorMessage = `AWB Assignment Failed across all prioritized couriers. Last error: ${lastAwbError}`;
+          orderToBook.errorMessage = `AWB Assignment Failed across all prioritized couriers AND Auto-Assign. Last error: ${lastAwbError}`;
           orderToBook.shiprocketOrderId = undefined;
           orderToBook.shipmentId = undefined;
           await saveSingleOrderToDb(orderToBook);
