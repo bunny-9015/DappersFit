@@ -842,7 +842,17 @@ async function getShiprocketAuthHeaders() {
 
   // Option 2: If manual bearer token is configured, use it directly
   if (serverSettings.shiprocketToken) {
-    return { 'Authorization': `Bearer ${serverSettings.shiprocketToken}`, 'Content-Type': 'application/json' };
+    let token = serverSettings.shiprocketToken.trim();
+    if (token.startsWith('Bearer ')) token = token.substring(7).trim();
+    
+    // Prevent "wrong number of segments" by verifying it's a valid JWT format
+    if (token.split('.').length === 3) {
+      return { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' };
+    } else {
+      console.warn('[Shiprocket] Configured manual token is malformed (not a valid JWT). Falling back to email/password login.');
+      // Temporarily clear it for this run to allow fallback to email login
+      serverSettings.shiprocketToken = '';
+    }
   }
 
   // Option 1: Retrieve using email and password login flow
