@@ -1,52 +1,52 @@
 [
   {
-    "ordersCount": 1,
-    "city": "Chemakurti",
-    "state": "Andhra Pradesh",
     "name": "BANDARU VENKATESH",
-    "id": "c1",
+    "state": "Andhra Pradesh",
+    "email": "bandaru.venk@gmail.com",
     "totalSpent": 2200,
+    "city": "Chemakurti",
     "phone": "8019566202",
-    "email": "bandaru.venk@gmail.com"
+    "id": "c1",
+    "ordersCount": 1
   },
   {
-    "email": "lokesh.kamath@gmail.com",
-    "ordersCount": 1,
-    "phone": "9041935824",
     "name": "Lokesh Kamath",
-    "city": "Bangalore",
-    "id": "c2",
     "state": "Karnataka",
-    "totalSpent": 2000
+    "ordersCount": 1,
+    "id": "c2",
+    "phone": "9041935824",
+    "email": "lokesh.kamath@gmail.com",
+    "totalSpent": 2000,
+    "city": "Bangalore"
   },
   {
-    "id": "c3",
-    "ordersCount": 1,
-    "phone": "7071799145",
-    "city": "Kolkata",
-    "email": "bunny.style@gmail.com",
-    "totalSpent": 2400,
     "name": "BUNNY",
-    "state": "West Bengal"
+    "ordersCount": 1,
+    "state": "West Bengal",
+    "totalSpent": 2400,
+    "phone": "7071799145",
+    "id": "c3",
+    "email": "bunny.style@gmail.com",
+    "city": "Kolkata"
   },
   {
     "ordersCount": 2,
+    "phone": "9876543211",
     "city": "Pune",
-    "id": "c4",
-    "state": "Maharashtra",
     "email": "aarav.sharma@gmail.com",
     "totalSpent": 4297,
-    "phone": "9876543211",
-    "name": "Aarav Sharma"
+    "state": "Maharashtra",
+    "name": "Aarav Sharma",
+    "id": "c4"
   },
   {
-    "ordersCount": 1,
-    "city": "Bengaluru",
-    "id": "c5",
-    "email": "ananya.iyer@gmail.com",
     "phone": "8765432109",
+    "email": "ananya.iyer@gmail.com",
+    "name": "Ananya Iyer",
+    "id": "c5",
     "totalSpent": 3298,
     "state": "Karnataka",
-    "name": "Ananya Iyer"
+    "city": "Bengaluru",
+    "ordersCount": 1
   }
 ]
