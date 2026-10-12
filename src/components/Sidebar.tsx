@@ -7,7 +7,7 @@ import React from 'react';
 import { 
   LayoutDashboard, ClipboardList, Wand2, Boxes, Users, UserCheck, 
   Wallet, Gift, BarChart3, Truck, ScrollText, Settings, LogOut, KeyRound, UserRound, PackageCheck,
-  ArrowRightLeft 
+  ArrowRightLeft, Download, Smartphone, WifiOff 
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -17,9 +17,24 @@ interface SidebarProps {
   user: { name: string; email: string; role: 'admin' | 'employee' } | null;
   onSignOut: () => void;
   onOpenProfile?: () => void;
+  isInstallable?: boolean;
+  isInstalled?: boolean;
+  onInstall?: () => void;
+  isOnline?: boolean;
 }
 
-export default function Sidebar({ activeTab, setActiveTab, isSimulated, user, onSignOut, onOpenProfile }: SidebarProps) {
+export default function Sidebar({ 
+  activeTab, 
+  setActiveTab, 
+  isSimulated, 
+  user, 
+  onSignOut, 
+  onOpenProfile,
+  isInstallable,
+  isInstalled,
+  onInstall,
+  isOnline = true
+}: SidebarProps) {
   const isAdmin = user?.role === 'admin';
 
   // Base navigation items for all roles (WITHOUT AI WhatsApp Parser tab)
@@ -141,6 +156,33 @@ export default function Sidebar({ activeTab, setActiveTab, isSimulated, user, on
             <span>Sign Out</span>
           </button>
         </div>
+
+        {/* PWA Install Button or App Status */}
+        {isInstallable && !isInstalled && onInstall && (
+          <button
+            onClick={onInstall}
+            className="w-full flex items-center justify-center gap-2 py-2 px-3 bg-gradient-to-r from-[#b8862f] to-[#d4a843] text-black font-bold text-[11px] rounded-lg transition shadow-md hover:brightness-110 active:scale-95"
+            title="Install Dappersfit as Desktop/Mobile PWA"
+          >
+            <Download className="w-3.5 h-3.5" />
+            <span>Install Dappersfit App</span>
+          </button>
+        )}
+
+        {isInstalled && (
+          <div className="flex items-center justify-center gap-1.5 py-1 px-2 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded-lg text-[10px] font-mono font-semibold">
+            <Smartphone className="w-3 h-3" />
+            <span>PWA INSTALLED</span>
+          </div>
+        )}
+
+        {!isOnline && (
+          <div className="flex items-center justify-center gap-1.5 py-1 px-2 bg-red-500/10 border border-red-500/20 text-red-400 rounded-lg text-[10px] font-mono font-semibold animate-pulse">
+            <WifiOff className="w-3 h-3" />
+            <span>OFFLINE MODE</span>
+          </div>
+        )}
+
         <div className="text-[9px] text-center font-mono text-slate-600 uppercase tracking-widest pt-1">
           ORDER MANAGEMENT SYSTEM
         </div>

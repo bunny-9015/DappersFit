@@ -5666,17 +5666,28 @@ app.get('/book-courier', (req, res) => {
 });
 
 async function startServer() {
-  const isProduction = process.env.NODE_ENV === 'production' || !process.env.CONTROL_PLANE_PORT;
+  const isProduction = process.env.NODE_ENV === 'production';
 
-  // Frontend website has been explicitly disabled.
-  // We only serve the backend API for the mobile app now.
-  app.get('*', (req, res) => {
-    // Only intercept non-API routes, Express processes /api routes before this wildcard
-    if (req.path.startsWith('/api')) {
-      return res.status(404).json({ error: 'API endpoint not found' });
-    }
-    res.status(200).send('<h1>Dappersfit Backend API is active. Website is disabled.</h1>');
-  });
+  if (!isProduction) {
+    const vite = await createViteServer({
+      server: { middlewareMode: true },
+      appType: 'spa',
+    });
+    app.use(vite.middlewares);
+  } else {
+    app.use(express.static(path.join(process.cwd(), 'dist'), { dotfiles: 'allow' }));
+    app.get('*', (req, res) => {
+      if (req.path.startsWith('/api')) {
+        return res.status(404).json({ error: 'API endpoint not found' });
+      }
+      const distIndex = path.join(process.cwd(), 'dist', 'index.html');
+      if (fs.existsSync(distIndex)) {
+        res.sendFile(distIndex);
+      } else {
+        res.sendFile(path.join(process.cwd(), 'index.html'));
+      }
+    });
+  }
 
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`[Dappersfit Server] Booted successfully and running on port ${PORT}`);

@@ -1,14 +1,20 @@
 {
-  "name": "Dappersfit",
+  "name": "Dappersfit — Order Management",
   "short_name": "Dappersfit",
-  "description": "Logistics fulfillment dashboard with Shiprocket courier integration, AI order intake, priority dispatch, and replacement tracking.",
-  "start_url": "/",
+  "description": "Logistics fulfillment dashboard with Shiprocket courier integration, AI order intake, priority dispatch, replacement tracking, payroll & incentives.",
+  "start_url": "/?source=pwa",
   "scope": "/",
+  "id": "/",
   "display": "standalone",
-  "orientation": "portrait",
+  "display_override": ["window-controls-overlay", "standalone", "minimal-ui"],
+  "orientation": "portrait-primary",
   "background_color": "#0f172a",
   "theme_color": "#0f172a",
   "lang": "en",
+  "dir": "ltr",
+  "categories": ["business", "productivity", "logistics"],
+  "iarc_rating_id": "",
+  "prefer_related_applications": false,
   "icons": [
     {
       "src": "/icon-192.png",
@@ -27,8 +33,72 @@
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"
+    },
+    {
+      "src": "/apple-touch-icon.png",
+      "sizes": "180x180",
+      "type": "image/png",
+      "purpose": "any"
     }
   ],
-  "categories": ["business", "productivity"],
-  "prefer_related_applications": false
+  "shortcuts": [
+    {
+      "name": "View Orders",
+      "short_name": "Orders",
+      "description": "Open the live orders table",
+      "url": "/?tab=orders&source=shortcut",
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Dashboard",
+      "short_name": "Dashboard",
+      "description": "Open the analytics dashboard",
+      "url": "/?tab=dashboard&source=shortcut",
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Courier Booking",
+      "short_name": "Book Courier",
+      "description": "Book a new shipment",
+      "url": "/?tab=courier-booking&source=shortcut",
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Replacements",
+      "short_name": "Replacements",
+      "description": "Track replacement requests",
+      "url": "/?tab=replacements&source=shortcut",
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "form_factor": "narrow",
+      "label": "Dappersfit Dashboard"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "form_factor": "wide",
+      "label": "Dappersfit Orders"
+    }
+  ],
+  "share_target": {
+    "action": "/?share-target",
+    "method": "GET",
+    "params": {
+      "title": "title",
+      "text": "text",
+      "url": "url"
+    }
+  },
+  "related_applications": [],
+  "protocol_handlers": [],
+  "edge_side_panel": {
+    "preferred_width": 400
+  }
 }

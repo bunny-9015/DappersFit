@@ -27,6 +27,9 @@ import { RefreshCw, CheckCircle2, Menu, X } from 'lucide-react';
 import { ShiprocketService } from './services/shiprocketService';
 import { getTodayDateString } from './utils/dateUtils';
 import { downloadFileFromUrl } from './utils/downloadHelper';
+import { usePWA } from './hooks/usePWA';
+import PWAInstallBanner from './components/PWAInstallBanner';
+import PWAUpdateToast from './components/PWAUpdateToast';
 
 const DEFAULT_ORDERS: Order[] = [];
 
@@ -43,6 +46,8 @@ const DEFAULT_SETTINGS: AppSettings = {
 };
 
 export default function App() {
+  const pwa = usePWA();
+
   const [user, setUser] = useState<{ name: string; email: string; role: 'admin' | 'employee' } | null>(() => {
     const saved = localStorage.getItem('dappersfit_user');
     return saved ? JSON.parse(saved) : null;
@@ -50,7 +55,14 @@ export default function App() {
   const [orders, setOrders] = useState<Order[]>([]);
 
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
-  const [activeTab, setActiveTab] = useState<string>('orders');
+  const [activeTab, setActiveTab] = useState<string>(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const tabParam = params.get('tab');
+      if (tabParam) return tabParam;
+    } catch {}
+    return 'orders';
+  });
   const [isSimulated, setIsSimulated] = useState<boolean>(true);
 
   // Wallet State
@@ -884,6 +896,10 @@ export default function App() {
           user={user}
           onSignOut={handleSignOut}
           onOpenProfile={() => setIsProfileModalOpen(true)}
+          isInstallable={pwa.isInstallable}
+          isInstalled={pwa.isInstalled}
+          onInstall={pwa.promptInstall}
+          isOnline={pwa.isOnline}
         />
       </div>
 
@@ -924,6 +940,10 @@ export default function App() {
                 setIsProfileModalOpen(true);
                 setIsMobileSidebarOpen(false);
               }}
+              isInstallable={pwa.isInstallable}
+              isInstalled={pwa.isInstalled}
+              onInstall={pwa.promptInstall}
+              isOnline={pwa.isOnline}
             />
           </div>
         </div>
@@ -1114,6 +1134,21 @@ export default function App() {
           onClose={() => setSelectedOrderForWhatsApp(null)}
         />
       )}
+
+      {/* PWA Install Banner */}
+      <PWAInstallBanner
+        isInstallable={pwa.isInstallable}
+        isInstalled={pwa.isInstalled}
+        isOnline={pwa.isOnline}
+        onInstall={pwa.promptInstall}
+      />
+
+      {/* PWA Update Toast */}
+      <PWAUpdateToast
+        hasUpdate={pwa.hasUpdate}
+        onApplyUpdate={pwa.applyUpdate}
+        onDismiss={pwa.dismissUpdate}
+      />
     </div>
   );
 }
