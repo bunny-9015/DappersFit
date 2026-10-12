@@ -6,7 +6,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
-  Search, Eye, FileText, Download, Truck, Ban, CheckCircle2, 
+  Search, Eye, FileText, Download, Truck, Rocket, Ban, CheckCircle2, 
   MapPin, Clock, Calendar, ChevronDown, RefreshCw, AlertCircle, Sparkles, Filter, Check, RotateCw, Plus, X, Loader2, Edit, Trash2, MessageSquare, Users, AlertTriangle, Wallet
 } from 'lucide-react';
 import { Order, CourierServiceability } from '../types';
@@ -906,7 +906,7 @@ export default function OrdersTable({
         try {
           const res = await ShiprocketService.fetchLabel(String(shipmentIdToUse));
           if (res.success && res.url) {
-            await downloadFileFromUrl(res.url, `Label_${order.orderNumber || order.id}.pdf`);
+            await downloadFileFromUrl(res.url, `Dappersfit-Label-${order.orderNumber || order.id}.pdf`);
           }
         } catch (err) {
           console.error(`Failed to download label for order ${order.orderNumber}:`, err);
@@ -1414,7 +1414,7 @@ export default function OrdersTable({
                                     {isOrderProcessing ? (
                                       <Loader2 className="w-3.5 h-3.5 animate-spin text-slate-500" />
                                     ) : (
-                                      <Truck className={`w-3.5 h-3.5 ${order.status === 'failed' ? 'text-rose-600' : 'text-slate-500'}`} />
+                                      <Rocket className={`w-3.5 h-3.5 ${order.status === 'failed' ? 'text-rose-600' : 'text-amber-500'}`} />
                                     )}
                                     <span>{isOrderProcessing ? 'Processing...' : order.status === 'failed' ? 'Retry Courier' : 'Courier'}</span>
                                   </button>

@@ -16,7 +16,8 @@ interface Employee {
   phone: string;
   role: string;
   status: 'Active' | 'On Leave' | 'Inactive';
-  joiningDate: string;
+  joining_date?: string; // snake_case: mandatory for server
+  joiningDate: string;   // camelCase: backward-compatible alias
   payoutRate: number;
   username?: string;
   password?: string;
@@ -65,6 +66,7 @@ export default function EmployeesPanel({ currentUser }: EmployeesPanelProps) {
   const [phone, setPhone] = useState('');
   const [role, setRole] = useState('Fulfillment Executive');
   const [payoutRate, setPayoutRate] = useState(35000);
+  const [joiningDate, setJoiningDate] = useState(new Date().toISOString().slice(0, 10));
   const [empUsername, setEmpUsername] = useState('');
   const [empPassword, setEmpPassword] = useState('');
 
@@ -74,6 +76,7 @@ export default function EmployeesPanel({ currentUser }: EmployeesPanelProps) {
   const [editPhone, setEditPhone] = useState('');
   const [editRole, setEditRole] = useState('');
   const [editPayoutRate, setEditPayoutRate] = useState(35000);
+  const [editJoiningDate, setEditJoiningDate] = useState('2026-07-16');
   const [editStatus, setEditStatus] = useState<'Active' | 'On Leave' | 'Inactive'>('Active');
   const [editUsername, setEditUsername] = useState('');
   const [editPassword, setEditPassword] = useState('');
@@ -107,6 +110,7 @@ export default function EmployeesPanel({ currentUser }: EmployeesPanelProps) {
       setEditPhone(selectedEmp.phone);
       setEditRole(selectedEmp.role);
       setEditPayoutRate(selectedEmp.payoutRate);
+      setEditJoiningDate(selectedEmp.joining_date || selectedEmp.joiningDate || '2026-07-16');
       setEditStatus(selectedEmp.status);
       setEditUsername(selectedEmp.username || selectedEmp.email);
       setEditPassword(selectedEmp.password || 'Password@123');
@@ -121,7 +125,10 @@ export default function EmployeesPanel({ currentUser }: EmployeesPanelProps) {
 
   const handleAdd = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name || !email || !phone) return;
+    if (!name || !email || !phone || !joiningDate) {
+      alert('Please fill in all mandatory fields, including Joining Date.');
+      return;
+    }
 
     const newEmp: Employee = {
       id: `emp-${Date.now()}-${Math.floor(Math.random() * 1000000)}`,
@@ -130,7 +137,8 @@ export default function EmployeesPanel({ currentUser }: EmployeesPanelProps) {
       phone,
       role,
       status: 'Active',
-      joiningDate: new Date().toISOString().slice(0, 10),
+      joining_date: joiningDate,
+      joiningDate: joiningDate,
       payoutRate: Number(payoutRate),
       username: empUsername || email,
       password: empPassword || 'Password@123'
@@ -150,6 +158,7 @@ export default function EmployeesPanel({ currentUser }: EmployeesPanelProps) {
     setEmail('');
     setPhone('');
     setRole('Fulfillment Executive');
+    setJoiningDate(new Date().toISOString().slice(0, 10));
     setPayoutRate(35000);
     setEmpUsername('');
     setEmpPassword('');
@@ -159,13 +168,15 @@ export default function EmployeesPanel({ currentUser }: EmployeesPanelProps) {
     e.preventDefault();
     if (!selectedEmp) return;
 
-    const updatedEmp = {
+    const updatedEmp: Employee = {
       ...selectedEmp,
       name: editName,
       email: editEmail,
       phone: editPhone,
       role: editRole,
       payoutRate: Number(editPayoutRate),
+      joining_date: editJoiningDate,
+      joiningDate: editJoiningDate,
       status: editStatus,
       username: editUsername,
       password: editPassword
@@ -448,6 +459,20 @@ export default function EmployeesPanel({ currentUser }: EmployeesPanelProps) {
                   className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-slate-100 text-sm outline-none focus:border-sky-400 font-mono"
                 />
               </div>
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-xs font-semibold text-slate-400 flex items-center justify-between">
+                <span>Joining Date <span className="text-amber-400 font-bold">* Mandatory</span></span>
+                <span className="text-[10px] text-slate-500 font-mono">Starts 30-Day Salary Cycle</span>
+              </label>
+              <input
+                type="date"
+                required
+                value={joiningDate}
+                onChange={(e) => setJoiningDate(e.target.value)}
+                className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-slate-100 text-sm outline-none focus:border-sky-400 font-mono"
+              />
             </div>
 
             {/* Login Credentials Section */}
@@ -749,15 +774,29 @@ export default function EmployeesPanel({ currentUser }: EmployeesPanelProps) {
                   </div>
                 </div>
 
-                <div className="space-y-1">
-                  <label className="text-xs font-semibold text-slate-400">Salary Base (₹/mo)</label>
-                  <input
-                    type="number"
-                    required
-                    value={editPayoutRate}
-                    onChange={(e) => setEditPayoutRate(Number(e.target.value))}
-                    className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-slate-100 text-sm outline-none focus:border-sky-400 font-mono"
-                  />
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1">
+                    <label className="text-xs font-semibold text-slate-400">Salary Base (₹/mo)</label>
+                    <input
+                      type="number"
+                      required
+                      value={editPayoutRate}
+                      onChange={(e) => setEditPayoutRate(Number(e.target.value))}
+                      className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-slate-100 text-sm outline-none focus:border-sky-400 font-mono"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs font-semibold text-slate-400 flex items-center justify-between">
+                      <span>Joining Date <span className="text-amber-400 font-bold">* Mandatory</span></span>
+                    </label>
+                    <input
+                      type="date"
+                      required
+                      value={editJoiningDate}
+                      onChange={(e) => setEditJoiningDate(e.target.value)}
+                      className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-slate-100 text-sm outline-none focus:border-sky-400 font-mono"
+                    />
+                  </div>
                 </div>
 
                 {/* Edit Login Credentials Subsection */}

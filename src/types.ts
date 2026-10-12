@@ -52,6 +52,121 @@ export interface Order {
   createdByEmployeeName?: string;
   productAdvance?: boolean;
   productAdvanceIncentive?: number;
+  productAttached?: boolean;
+  incentiveEarned?: number;
+  pickupLocation?: string;
+  pickupAddress?: any;
+}
+
+export interface Employee {
+  id: string;
+  name: string;
+  email: string;
+  phone: string;
+  role: string;
+  status: 'Active' | 'Inactive';
+  joining_date: string; // Mandatory YYYY-MM-DD
+  joiningDate?: string; // backwards compatibility
+  payoutRate: number; // monthly base salary
+  username?: string;
+  password?: string;
+  activeIncentiveBalance?: number;
+  totalEarnedIncentives?: number;
+  totalPaidPayouts?: number;
+}
+
+export interface SalaryCycle {
+  cycleNumber: number;
+  startDate: string;
+  endDate: string;
+  startDateFormatted: string;
+  endDateFormatted: string;
+  daysElapsed: number;
+  daysRemaining: number;
+  isCurrent: boolean;
+  isCompleted: boolean;
+  isSettlementDue: boolean;
+  earnedSalary: number;
+}
+
+export interface IncentiveCreditEvent {
+  id: string;
+  orderId: string;
+  orderNumber: string;
+  employeeId: string;
+  employeeName: string;
+  amount: number;
+  type: 'immediate_product' | 'pending_item';
+  reason: string;
+  timestamp: number;
+  date: string;
+}
+
+export interface PayoutTransaction {
+  id: string;
+  employeeId: string;
+  employeeName: string;
+  role: string;
+  payoutAmount: number;
+  payoutType: 'Partial Payout' | 'Full Settlement';
+  previousDueBalance: number;
+  remainingDueBalance: number;
+  accumulatedBaseSalaryAtPayment?: number;
+  accumulatedIncentivesAtPayment?: number;
+  cycleNumber?: number;
+  cycleDateRange?: string;
+  timestamp: number;
+  payoutDate: string;
+  processedBy: string;
+  paymentMethod: string;
+  notes?: string;
+  status: 'Paid';
+  phone?: string;
+  smsNotification?: string;
+  whatsappUrl?: string;
+  month?: string;
+  salaryAmount?: number;
+  incentiveAmount?: number;
+  totalPaid?: number;
+}
+
+export interface EmployeePayrollSummary {
+  id: string;
+  name: string;
+  role: string;
+  email: string;
+  phone: string;
+  status: string;
+  joining_date: string;
+  baseSalaryRate: number;
+  currentCycle: SalaryCycle;
+  cycleHistory: SalaryCycle[];
+  accumulatedBaseSalary: number;
+  accumulatedLiveIncentives: number;
+  totalGrossEarned: number;
+  totalPastPaid: number;
+  totalDueBalance: number;
+  liveIncentivesBreakdown: {
+    totalOrders: number;
+    immediateProductCount: number;
+    pendingItemCount: number;
+    immediateProductAmount: number;
+    pendingItemAmount: number;
+  };
+  settlementStatus: 'Settlement Due' | 'In Progress' | 'Up to Date';
+  milestoneNotice?: string;
+  payoutLogs?: PayoutTransaction[];
+}
+
+export interface AuthUser {
+  id?: string;
+  name: string;
+  email: string;
+  role: 'admin' | 'manager' | 'employee';
+  employeeRole?: string;
+  joining_date?: string;
+  phone?: string;
+  payoutRate?: number;
 }
 
 export interface TrackingEvent {

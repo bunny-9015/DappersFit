@@ -547,7 +547,7 @@ export default function ShippingLabelModal({ order, onClose, onDownloadStatusCha
         });
         const data = await response.json();
         if (data.success && data.labelUrl) {
-          await downloadFileFromUrl(data.labelUrl, `Label_${reconciledOrder.orderNumber || reconciledOrder.id}.pdf`);
+          await downloadFileFromUrl(data.labelUrl, `Dappersfit-Label-${reconciledOrder.orderNumber || reconciledOrder.id}.pdf`);
           downloaded = true;
         } else {
           setDownloadError(data.error || 'Shiprocket has not generated the label for this shipment yet. The order is booked, but label is still being processed.');

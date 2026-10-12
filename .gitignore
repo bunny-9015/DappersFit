@@ -6,3 +6,7 @@ coverage/
 *.log
 .env*
 !.env.example
+
+# Sensitive data files — contain employee passwords, customer info, orders, payroll
+# These live on the server only and must NEVER be committed to git
+data_*.json

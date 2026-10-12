@@ -5,6 +5,17 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Dappersfit</title>
     <meta name="description" content="Logistics fulfillment dashboard with Shiprocket integration for courier order booking, AI Phase unstructured data intake, priority color flags (Red, Orange, Green), replacements & exchange tracking with mandatory phone and optional address." />
+    <!-- PWA Web App Manifest (required for TWA APK via PWABuilder) -->
+    <link rel="manifest" href="/manifest.json" />
+    <!-- Theme colour for mobile browser chrome bar -->
+    <meta name="theme-color" content="#0f172a" />
+    <!-- iOS Safari PWA support -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Dappersfit" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png" />
+    <link rel="icon" type="image/png" sizes="512x512" href="/icon-512.png" />
   </head>
   <body>
     <script>
@@ -22,9 +33,19 @@
           event.preventDefault();
         }
       });
+
+      // Register PWA Service Worker (required for PWABuilder APK generation)
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', function () {
+          navigator.serviceWorker.register('/sw.js').then(function (reg) {
+            console.log('[SW] Registered:', reg.scope);
+          }).catch(function (err) {
+            console.warn('[SW] Registration failed:', err);
+          });
+        });
+      }
     </script>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
-

@@ -19,6 +19,8 @@ export interface OrderBookingResponse {
   courierName?: string;
   order?: Order;
   error?: string;
+  labelUrl?: string;
+  labelGenerated?: boolean;
 }
 
 export interface DocumentResponse {
@@ -162,7 +164,8 @@ export class ShiprocketService {
     assignedEmployeeId?: string,
     deliveryAddress?: any,
     pickupLocationName?: string,
-    pickupPostcode?: string
+    pickupPostcode?: string,
+    pickupAddress?: any
   ): Promise<OrderBookingResponse> {
     try {
       const response = await fetch(`${this.apiBase}/order/book`, {
@@ -174,7 +177,8 @@ export class ShiprocketService {
           assignedEmployeeId,
           deliveryAddress,
           pickupLocationName,
-          pickupPostcode
+          pickupPostcode,
+          pickupAddress
         })
       });
 
@@ -195,6 +199,8 @@ export class ShiprocketService {
           shipmentId: data.shipmentId,
           awbCode: data.awbCode,
           courierName: data.courierName,
+          labelUrl: data.labelUrl,
+          labelGenerated: data.labelGenerated ?? !!data.labelUrl,
           order: data.order
         };
       } else {
@@ -431,12 +437,24 @@ export class ShiprocketService {
     }
   }
 
-  static async priorityBookOrder(orderId: string, assignedEmployeeId?: string): Promise<OrderBookingResponse & { rate?: number }> {
+  static async priorityBookOrder(
+    orderId: string, 
+    assignedEmployeeId?: string,
+    pickupLocationName?: string,
+    pickupPostcode?: string,
+    pickupAddress?: any
+  ): Promise<OrderBookingResponse & { rate?: number }> {
     try {
       const response = await fetch(`${this.apiBase}/order/priority-book`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ orderId, assignedEmployeeId })
+        body: JSON.stringify({ 
+          orderId, 
+          assignedEmployeeId,
+          pickupLocationName,
+          pickupPostcode,
+          pickupAddress
+        })
       });
 
       if (!response.ok) {
@@ -458,6 +476,8 @@ export class ShiprocketService {
           awbCode: data.awbCode,
           courierName: data.courierName,
           rate: data.rate,
+          labelUrl: data.labelUrl,
+          labelGenerated: data.labelGenerated ?? !!data.labelUrl,
           order: data.order
         };
       } else {

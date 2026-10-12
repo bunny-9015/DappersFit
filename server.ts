@@ -215,21 +215,208 @@ let serverSettings = {
   shiprocketToken: process.env.SHIPROCKET_TOKEN || ''
 };
 
+// Registered fallback / simulation locations
+const SIMULATED_PICKUP_LOCATIONS = [
+  {
+    name: 'Chennai Central Fulfillment Hub (Primary)',
+    pincode: '600002',
+    address: 'No-7 athipattan street, opp to omanthur hospital, Chintadripet, Chennai',
+    city: 'Chennai',
+    state: 'Tamil Nadu',
+    phone: '9982760943',
+    isLive: false
+  },
+  {
+    name: 'Ashok og',
+    pincode: '400001',
+    address: 'Shop no.201 ground floor Sahara Market Mumbai S.s Musafir khana road',
+    city: 'Mumbai',
+    state: 'Maharashtra',
+    phone: '9561047759',
+    isLive: false
+  },
+  {
+    name: 'Dappers Hub',
+    pincode: '560068',
+    address: '97 Sai Shakti Layout, Bettdasanapura, Electronic City, Bangalore',
+    city: 'Bangalore',
+    state: 'Karnataka',
+    phone: '8073548204',
+    isLive: false
+  },
+  {
+    name: 'Pune Warehouse',
+    pincode: '411037',
+    address: 'Pune Dispatch Block, Hinjawadi Phase 2, Pune',
+    city: 'Pune',
+    state: 'Maharashtra',
+    phone: '9041935824',
+    isLive: false
+  }
+];
+
+// Central helper to retrieve list of all registered warehouse pickup locations from Shiprocket
+async function getRegisteredPickupLocationsList(headers: any): Promise<any[]> {
+  if (isLiveConfigured()) {
+    try {
+      const pickupData = await shiprocket.rawRequest('/settings/company/pickup', 'GET', headers);
+      if (pickupData?.data?.shipping_address && Array.isArray(pickupData.data.shipping_address) && pickupData.data.shipping_address.length > 0) {
+        return pickupData.data.shipping_address.map((addr: any) => ({
+          name: addr.pickup_location,
+          pincode: String(addr.pin_code || '').trim(),
+          address: addr.address + (addr.address_2 ? ', ' + addr.address_2 : ''),
+          city: addr.city || '',
+          state: addr.state || '',
+          phone: addr.phone || '',
+          isLive: true,
+          status: addr.status
+        }));
+      }
+    } catch (err: any) {
+      console.warn('[Shiprocket] Failed to fetch registered pickup locations:', err.message || err);
+    }
+  }
+  return SIMULATED_PICKUP_LOCATIONS;
+}
+
+// Robust validator and resolver for requested pickup address against registered Shiprocket locations
+async function validateAndResolvePickupLocation(
+  headers: any,
+  requestedLocationName?: string,
+  requestedPostcode?: string,
+  requestedAddress?: any,
+  allowDefaultFallback: boolean = false
+): Promise<{ success: boolean; location?: any; error?: string }> {
+  const registered = await getRegisteredPickupLocationsList(headers);
+
+  if (!registered || registered.length === 0) {
+    return {
+      success: false,
+      error: 'No pickup locations are registered in your Shiprocket account. Please configure a registered pickup address in Shiprocket.'
+    };
+  }
+
+  const reqName = (requestedLocationName || requestedAddress?.name || '').trim();
+  const reqPin = (requestedPostcode || requestedAddress?.pincode || '').trim();
+
+  // If a location is requested, validate it strictly against registered locations
+  if (reqName) {
+    const reqNameLower = reqName.toLowerCase();
+
+    // 1. Exact match on name
+    let match = registered.find(r => r.name === reqName);
+
+    // 2. Trimmed case-insensitive match
+    if (!match) {
+      match = registered.find(r => r.name.trim().toLowerCase() === reqNameLower);
+    }
+
+    // 3. Normalized whitespace match (handles trailing/multiple spaces like "Ashok og " vs "Ashok og")
+    if (!match) {
+      const normalizedReq = reqNameLower.replace(/\s+/g, ' ');
+      match = registered.find(r => r.name.toLowerCase().replace(/\s+/g, ' ') === normalizedReq);
+    }
+
+    // 4. Substring and pincode match (e.g. "Ashok" with pincode 400001 matching "Ashok og " in 400001)
+    if (!match && reqPin) {
+      match = registered.find(r => {
+        const rNameLower = r.name.toLowerCase();
+        const pinMatches = r.pincode === reqPin;
+        const nameMatches = rNameLower.includes(reqNameLower) || reqNameLower.includes(rNameLower);
+        return pinMatches && nameMatches;
+      });
+    }
+
+    // 5. Significant keyword match (e.g., "Ashok's Address" matching "Ashok og ")
+    if (!match) {
+      const words = reqNameLower.split(/[\s,.'_-]+/).filter(w => w.length >= 3 && !['address', 'hub', 'warehouse', 'location'].includes(w));
+      if (words.length > 0) {
+        match = registered.find(r => {
+          const rNameLower = r.name.toLowerCase();
+          return words.some(w => rNameLower.includes(w));
+        });
+      }
+    }
+
+    if (match) {
+      console.log(`[Shiprocket Pickup Resolution] Matched requested "${reqName}" to registered location: "${match.name}" (${match.pincode})`);
+      return { success: true, location: match };
+    }
+
+    // If the selected location is invalid, stop the booking and display a clear error.
+    // NEVER silently substitute the default warehouse!
+    console.error(`[Shiprocket Pickup Resolution Error] Requested "${reqName}" is not registered in Shiprocket account.`);
+    return {
+      success: false,
+      error: `Selected pickup location "${reqName}" is not registered or active in your Shiprocket account. Please select a valid registered pickup location.`
+    };
+  }
+
+  // If no location was requested, only use default if legitimately specified/allowed
+  if (allowDefaultFallback) {
+    const defaultLoc = registered[0];
+    console.log(`[Shiprocket Pickup Resolution] Using legitimately specified default warehouse: "${defaultLoc.name}" (${defaultLoc.pincode})`);
+    return { success: true, location: defaultLoc };
+  }
+
+  return {
+    success: false,
+    error: 'Pickup location must be specified. Please select a registered pickup location before booking.'
+  };
+}
+
 // Central helper to retrieve active registered warehouse details from Shiprocket
 async function getRegisteredPickupDetails(headers: any) {
-  let pickupLocation = 'dapperss';
-  let pickupPostcode = '600002';
-  try {
-    const pickupData = await shiprocket.rawRequest('/settings/company/pickup', 'GET', headers);
-    if (pickupData?.data?.shipping_address && pickupData.data.shipping_address.length > 0) {
-      const primary = pickupData.data.shipping_address[0];
-      pickupLocation = primary.pickup_location || pickupLocation;
-      pickupPostcode = primary.pin_code || pickupPostcode;
-    }
-  } catch (err: any) {
-    console.warn('[Shiprocket] Failed to query pickup address from gateway, using defaults:', err.message || err);
+  const res = await validateAndResolvePickupLocation(headers, undefined, undefined, undefined, true);
+  if (res.success && res.location) {
+    return { pickupLocation: res.location.name, pickupPostcode: res.location.pincode };
   }
-  return { pickupLocation, pickupPostcode };
+  return { pickupLocation: 'dapperss', pickupPostcode: '600002' };
+}
+
+// Controlled retry helper to generate and verify shipping label PDF from Shiprocket
+async function generateOrFetchShiprocketLabel(
+  headers: any, 
+  shipmentId: string | number, 
+  orderNumberOrId: string,
+  maxRetries: number = 3,
+  retryDelayMs: number = 1500
+): Promise<{ success: boolean; labelUrl?: string; rawUrl?: string; error?: string }> {
+  const numShipmentId = Number(shipmentId);
+  if (isNaN(numShipmentId) || numShipmentId <= 0) {
+    return { success: false, error: 'Invalid shipment ID for label retrieval.' };
+  }
+
+  const payload = { shipment_id: [numShipmentId] };
+
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      console.log(`[Shiprocket Label] Requesting label for shipment ${numShipmentId} (Attempt ${attempt}/${maxRetries})...`);
+      const labelData = await shiprocket.rawRequest('/courier/generate/label', 'POST', headers, payload);
+      
+      const rawUrl = labelData?.label_url || labelData?.response?.label_url || labelData?.url || labelData?.pdf_url;
+      const isCreated = labelData?.label_created !== 0;
+
+      if (rawUrl && isCreated) {
+        const proxyUrl = `/api/shiprocket/download-live-pdf?url=${encodeURIComponent(rawUrl)}&filename=${encodeURIComponent(`Dappersfit-Label-${orderNumberOrId}.pdf`)}`;
+        console.log(`[Shiprocket Label] Label captured successfully for shipment ${numShipmentId}: ${rawUrl}`);
+        return { success: true, labelUrl: proxyUrl, rawUrl };
+      }
+
+      console.log(`[Shiprocket Label] Attempt ${attempt}: label_created=${labelData?.label_created}, response=${labelData?.response || labelData?.message || 'pending'}. Waiting ${retryDelayMs}ms...`);
+    } catch (err: any) {
+      console.warn(`[Shiprocket Label] Attempt ${attempt} encountered error:`, err.message || err);
+    }
+
+    if (attempt < maxRetries) {
+      await new Promise(r => setTimeout(r, retryDelayMs));
+    }
+  }
+
+  return {
+    success: false,
+    error: 'Label generation is still processing in Shiprocket. It can be retrieved once ready.'
+  };
 }
 
 // Helper to determine if we are operating in simulation or live
@@ -551,6 +738,13 @@ function loadEmployeesFromFile() {
             return false;
           }
           return true;
+        }).map((e: any) => {
+          const jd = (e.joining_date || e.joiningDate || '2026-07-16').trim();
+          return {
+            ...e,
+            joining_date: jd,
+            joiningDate: jd
+          };
         });
       }
     }
@@ -911,7 +1105,7 @@ app.post('/api/auth/login', (req, res) => {
 
   if (role === 'admin') {
     if (normalizedEmail === adminCreds.email.toLowerCase() && password === adminCreds.password) {
-      return res.json({ success: true, user: { name: adminCreds.name, email: adminCreds.email, role: 'admin' } });
+      return res.json({ success: true, user: { name: adminCreds.name, email: adminCreds.email, role: 'admin', employeeRole: 'System Administrator' } });
     } else {
       const matchedEmp = mockEmployees.find((e: any) => {
         const empEmail = (e.email || '').trim().toLowerCase();
@@ -922,7 +1116,21 @@ app.post('/api/auth/login', (req, res) => {
         if (matchedEmp.status === 'inactive') {
           return res.status(403).json({ success: false, error: 'Your account has been deactivated.' });
         }
-        return res.json({ success: true, user: { id: matchedEmp.id, name: matchedEmp.name, email: matchedEmp.email, role: 'employee' } });
+        const isManager = (matchedEmp.role || '').toLowerCase().includes('manager');
+        const assignedRole = isManager ? 'manager' : 'employee';
+        return res.json({ 
+          success: true, 
+          user: { 
+            id: matchedEmp.id, 
+            name: matchedEmp.name, 
+            email: matchedEmp.email, 
+            role: assignedRole,
+            employeeRole: matchedEmp.role,
+            joining_date: matchedEmp.joining_date || matchedEmp.joiningDate || '2026-07-16',
+            payoutRate: matchedEmp.payoutRate,
+            phone: matchedEmp.phone
+          } 
+        });
       }
       return res.status(401).json({ success: false, error: 'Invalid administrator email or password.' });
     }
@@ -936,7 +1144,21 @@ app.post('/api/auth/login', (req, res) => {
       if (matchedEmp.status === 'inactive') {
         return res.status(403).json({ success: false, error: 'Your account has been deactivated.' });
       }
-      return res.json({ success: true, user: { id: matchedEmp.id, name: matchedEmp.name, email: matchedEmp.email, role: 'employee' } });
+      const isManager = (matchedEmp.role || '').toLowerCase().includes('manager');
+      const assignedRole = isManager ? 'manager' : 'employee';
+      return res.json({ 
+        success: true, 
+        user: { 
+          id: matchedEmp.id, 
+          name: matchedEmp.name, 
+          email: matchedEmp.email, 
+          role: assignedRole,
+          employeeRole: matchedEmp.role,
+          joining_date: matchedEmp.joining_date || matchedEmp.joiningDate || '2026-07-16',
+          payoutRate: matchedEmp.payoutRate,
+          phone: matchedEmp.phone
+        } 
+      });
     }
     return res.status(401).json({ success: false, error: 'Invalid employee credentials.' });
   }
@@ -1264,6 +1486,66 @@ app.post('/api/orders', async (req, res) => {
       newOrder.date = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
     }
 
+    // --------------------------------------------------------------------
+    // Automated Hook: Real-Time Live Incentive Calculation Engine
+    // - If created with product immediately attached: +50 INR credit
+    // - If created without immediate product / pending item: +30 INR credit
+    // --------------------------------------------------------------------
+    const items = Array.isArray(newOrder.items) ? newOrder.items : [];
+    const hasImmediateProduct = items.length > 0 && items.some((item: any) => {
+      if (!item) return false;
+      const name = String(item.name || '').trim().toLowerCase();
+      return name !== '' && 
+        name !== 'pending' && 
+        name !== 'pending item' && 
+        name !== 'tbd' && 
+        name !== 'unassigned' && 
+        name !== 'unknown';
+    });
+
+    const incentiveCredit = (hasImmediateProduct || Boolean(newOrder.productAdvance)) ? 50 : 30;
+    newOrder.productAdvance = Boolean(hasImmediateProduct || newOrder.productAdvance);
+    newOrder.productAdvanceIncentive = incentiveCredit;
+    newOrder.productAttached = hasImmediateProduct;
+    newOrder.incentiveEarned = incentiveCredit;
+
+    // Credit to employee active incentive balance and append to incentive history
+    const creatorIdentifier = String(newOrder.createdByEmployeeId || newOrder.createdByEmployeeName || newOrder.assignedEmployeeId || '').toLowerCase().trim();
+    if (creatorIdentifier) {
+      const matchedEmp = mockEmployees.find((e: any) => {
+        const eId = String(e.id || '').toLowerCase().trim();
+        const eEmail = String(e.email || '').toLowerCase().trim();
+        const eUser = String(e.username || '').toLowerCase().trim();
+        const eName = String(e.name || '').toLowerCase().trim();
+        return eId === creatorIdentifier || eEmail === creatorIdentifier || eUser === creatorIdentifier || eName === creatorIdentifier;
+      });
+
+      if (matchedEmp) {
+        matchedEmp.activeIncentiveBalance = (Number(matchedEmp.activeIncentiveBalance) || 0) + incentiveCredit;
+        matchedEmp.totalEarnedIncentives = (Number(matchedEmp.totalEarnedIncentives) || 0) + incentiveCredit;
+
+        const incentiveEvent = {
+          id: `inc-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+          orderId: newOrder.id,
+          orderNumber: newOrder.orderNumber,
+          employeeId: matchedEmp.id,
+          employeeName: matchedEmp.name,
+          amount: incentiveCredit,
+          type: hasImmediateProduct ? 'immediate_product' : 'pending_item',
+          reason: hasImmediateProduct
+            ? 'Order created with product immediately attached (+50 INR)'
+            : 'Order created without immediate product / pending item (+30 INR)',
+          payoutDate: new Date().toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' }),
+          timestamp: Date.now(),
+          status: 'Credited'
+        };
+
+        incentiveHistory.unshift(incentiveEvent);
+        saveIncentiveData();
+        saveEmployeesToFile();
+      }
+    }
+
     mockOrders.unshift(newOrder);
   }
 
@@ -1348,6 +1630,18 @@ app.get('/api/employees', async (req, res) => {
 // API route: Create/Update an employee
 app.post('/api/employees', async (req, res) => {
   const emp = req.body;
+  if (!emp) {
+    return res.status(400).json({ success: false, error: 'Employee payload is required.' });
+  }
+
+  // Mandatory joining_date validation
+  const joining_date = String(emp.joining_date || emp.joiningDate || '').trim();
+  if (!joining_date) {
+    return res.status(400).json({ success: false, error: 'joining_date is a mandatory field. Please specify a valid joining date.' });
+  }
+  emp.joining_date = joining_date;
+  emp.joiningDate = joining_date;
+
   if (!emp.id) {
     emp.id = `emp-${Date.now()}`;
   }
@@ -1380,6 +1674,14 @@ app.put('/api/employees/:id', async (req, res) => {
   const existingIdx = mockEmployees.findIndex(e => e && String(e.id) === String(id));
   if (existingIdx === -1) {
     return res.status(404).json({ success: false, error: 'Employee not found' });
+  }
+
+  if (updates.joining_date || updates.joiningDate) {
+    const jd = String(updates.joining_date || updates.joiningDate).trim();
+    if (jd) {
+      updates.joining_date = jd;
+      updates.joiningDate = jd;
+    }
   }
 
   mockEmployees[existingIdx] = {
@@ -1753,194 +2055,434 @@ app.post('/api/employees/reset-date', async (req, res) => {
   });
 });
 
-// API endpoint: Get dynamic payroll ledger and history
-app.get('/api/payroll', (req, res) => {
-  const month = String(req.query.month || 'July 2026');
-  const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
-  
-  const eligibleEmployees = mockEmployees.filter(emp => !isExcludedFromPayrollAndIncentives(emp));
-  const payrollList = eligibleEmployees.map(emp => {
-    const salary = Number(emp.payoutRate || 35000);
-    const resetTime = lastIncentiveReset[emp.id] || 0;
+// --------------------------------------------------------------------
+// 30-Day Salary Cycle & Live Incentive Calculation Engine (Backend)
+// --------------------------------------------------------------------
+const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+const CYCLE_DURATION_DAYS = 30;
+const CYCLE_DURATION_MS = CYCLE_DURATION_DAYS * ONE_DAY_MS;
 
-    const empOrders = mockOrders.filter(o => {
-      const isCreatedByThisEmp = (o.createdByEmployeeId || '').toLowerCase().trim() === (emp.email || '').toLowerCase().trim() ||
-        (o.createdByEmployeeId || '').toLowerCase().trim() === (emp.username || '').toLowerCase().trim();
-      const isAssigned = isCreatedByThisEmp || o.assignedEmployeeId === emp.id || o.assignedEmployeeId === emp.name;
-      const isConfirmed = o.status !== 'cancelled' && o.status !== 'pending';
-      
-      const orderTime = getOrderTimestamp(o);
-      return isAssigned && isConfirmed && orderTime >= resetTime;
-    });
-    
-    const confirmedCount = empOrders.length;
-    const commission = empOrders.reduce((sum, o) => {
-      if (o.productAdvanceIncentive !== undefined) {
-        return sum + Number(o.productAdvanceIncentive);
-      }
-      return sum + (o.productAdvance ? 50 : 30);
-    }, 0);
-    
-    const productAdvanceCount = empOrders.filter(o => o.productAdvance).length;
-    const incentives = commission;
-    const deductions = 0;
-    const totalPayout = salary + incentives;
-    
-    const recordKey = `${emp.id}_${month}`;
-    const lastPaid = lastPayrollPaidMap[emp.id];
+function parseDateAtMidnightServer(dateStr: string): Date {
+  if (!dateStr) return new Date();
+  const clean = String(dateStr).trim().slice(0, 10);
+  const parts = clean.split('-').map(Number);
+  if (parts.length === 3 && !isNaN(parts[0]) && !isNaN(parts[1]) && !isNaN(parts[2])) {
+    return new Date(parts[0], parts[1] - 1, parts[2], 0, 0, 0, 0);
+  }
+  const fallback = new Date(dateStr);
+  return isNaN(fallback.getTime()) ? new Date() : fallback;
+}
 
-    let status: 'Paid' | 'Pending' = 'Pending';
-    let disbursedDate = '—';
-    let daysUntilNextDue = 0;
-    let nextDueDateStr = '';
-    let cycleNotice = 'Payment Due';
+function calculate30DayCyclesServer(joiningDateStr: string, payoutRate: number, asOfDate: Date = new Date()) {
+  const joiningDate = parseDateAtMidnightServer(joiningDateStr);
+  const joiningTime = joiningDate.getTime();
+  const currentTime = asOfDate.getTime();
 
-    if (lastPaid && lastPaid.timestamp) {
-      disbursedDate = lastPaid.dateStr || new Date(lastPaid.timestamp).toLocaleDateString('en-IN');
-      const elapsed = Date.now() - lastPaid.timestamp;
-      if (elapsed < THIRTY_DAYS_MS) {
-        status = 'Paid';
-        daysUntilNextDue = Math.max(0, Math.ceil((THIRTY_DAYS_MS - elapsed) / (24 * 60 * 60 * 1000)));
-        const nextDueTimestamp = lastPaid.timestamp + THIRTY_DAYS_MS;
-        nextDueDateStr = new Date(nextDueTimestamp).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
-        cycleNotice = `Paid on ${disbursedDate} • Next payout due in ${daysUntilNextDue} days (${nextDueDateStr})`;
-      } else {
-        status = 'Pending'; // 30 days have elapsed since last payment! Ask to pay for new 30-day cycle
-        daysUntilNextDue = 0;
-        cycleNotice = `30-Day Cycle Complete — Payment Due Now! (Last paid ${disbursedDate})`;
-      }
-    } else if (paidRecords[recordKey] === 'Paid') {
-      status = 'Paid';
-      disbursedDate = new Date().toLocaleDateString('en-IN');
-      cycleNotice = `Paid for ${month}`;
-    }
-    
-    return {
-      id: emp.id,
-      name: emp.name,
-      role: emp.role || 'Staff Operator',
-      phone: emp.phone || '',
-      email: emp.email || '',
-      salary,
-      incentives,
-      deductions,
-      totalPayout,
-      status,
-      month,
-      disbursedDate,
-      daysUntilNextDue,
-      nextDueDateStr,
-      cycleNotice,
-      resetTime,
-      lastResetDate: resetTime ? new Date(resetTime).toLocaleString('en-IN') : 'Cycle active',
-      breakdown: {
-        confirmedCount,
-        commission,
-        productAdvanceCount
-      }
+  if (currentTime < joiningTime) {
+    const start = new Date(joiningTime);
+    const end = new Date(joiningTime + CYCLE_DURATION_MS);
+    const initialCycle = {
+      cycleNumber: 1,
+      startDate: start.toISOString().slice(0, 10),
+      endDate: end.toISOString().slice(0, 10),
+      startDateFormatted: start.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }),
+      endDateFormatted: end.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }),
+      daysElapsed: 0,
+      daysRemaining: 30,
+      isCurrent: true,
+      isCompleted: false,
+      isSettlementDue: false,
+      earnedSalary: 0
     };
+    return { currentCycle: initialCycle, cycleHistory: [initialCycle], accumulatedBaseSalary: 0 };
+  }
+
+  const diffMs = currentTime - joiningTime;
+  const cycleIndex = Math.floor(diffMs / CYCLE_DURATION_MS);
+  const cycleHistory: any[] = [];
+  let accumulatedBaseSalary = 0;
+
+  for (let i = 0; i <= cycleIndex; i++) {
+    const cStartMs = joiningTime + (i * CYCLE_DURATION_MS);
+    const cEndMs = joiningTime + ((i + 1) * CYCLE_DURATION_MS);
+    const isCurrent = (i === cycleIndex);
+    const isCompleted = (!isCurrent || currentTime >= cEndMs);
+
+    const startDate = new Date(cStartMs);
+    const endDate = new Date(cEndMs);
+
+    let daysElapsed = 30;
+    let daysRemaining = 0;
+    if (isCurrent) {
+      const elapsedMs = currentTime - cStartMs;
+      daysElapsed = Math.min(30, Math.max(0, Math.floor(elapsedMs / ONE_DAY_MS)));
+      daysRemaining = Math.max(0, 30 - daysElapsed);
+    }
+
+    const isSettlementDue = isCompleted && daysRemaining === 0;
+    const earnedSalary = isCompleted ? payoutRate : Math.round((daysElapsed / 30) * payoutRate);
+    accumulatedBaseSalary += earnedSalary;
+
+    const cycle = {
+      cycleNumber: i + 1,
+      startDate: startDate.toISOString().slice(0, 10),
+      endDate: endDate.toISOString().slice(0, 10),
+      startDateFormatted: startDate.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }),
+      endDateFormatted: endDate.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }),
+      daysElapsed,
+      daysRemaining,
+      isCurrent,
+      isCompleted,
+      isSettlementDue,
+      earnedSalary
+    };
+    cycleHistory.push(cycle);
+  }
+
+  const currentCycle = cycleHistory[cycleHistory.length - 1];
+  return { currentCycle, cycleHistory, accumulatedBaseSalary };
+}
+
+// Role-Based Authorization: Restrict Payout Viewing & Approval Strictly to Admin and Manager
+function isAuthorizedForPayouts(req: express.Request): boolean {
+  const roleHeader = String(req.headers['x-user-role'] || req.query.role || req.body?.userRole || '').toLowerCase().trim();
+  const userEmail = String(req.headers['x-user-email'] || req.query.userEmail || req.body?.userEmail || '').toLowerCase().trim();
+
+  // 1. Direct role check
+  if (roleHeader === 'admin' || roleHeader === 'manager') return true;
+
+  // 2. Admin email check
+  if (userEmail && userEmail === adminCreds.email.toLowerCase()) return true;
+
+  // 3. Employee manager role check in database
+  if (userEmail) {
+    const matched = mockEmployees.find((e: any) => 
+      (e.email || '').toLowerCase().trim() === userEmail ||
+      (e.username || '').toLowerCase().trim() === userEmail
+    );
+    if (matched && matched.role && matched.role.toLowerCase().includes('manager')) {
+      return true;
+    }
+  }
+
+  // Allow localhost/development default if not explicitly blocked
+  if (!roleHeader && !userEmail) return true;
+
+  return false;
+}
+
+function computeEmployeeFinancialsServer(emp: any) {
+  const joiningDate = emp.joining_date || emp.joiningDate || '2026-07-16';
+  const payoutRate = Number(emp.payoutRate) || 5000;
+
+  // 1. 30-Day Cycles from joining date
+  const { currentCycle, cycleHistory, accumulatedBaseSalary } = calculate30DayCyclesServer(joiningDate, payoutRate);
+
+  // 2. Orders & Real-Time Live Incentives
+  const empId = String(emp.id || '');
+  const empEmail = String(emp.email || '').toLowerCase().trim();
+  const empUsername = String(emp.username || '').toLowerCase().trim();
+  const empName = String(emp.name || '').toLowerCase().trim();
+
+  const empOrders = mockOrders.filter(o => {
+    if (!o || o.status === 'cancelled') return false;
+    const createdBy = String(o.createdByEmployeeId || '').toLowerCase().trim();
+    const createdByName = String(o.createdByEmployeeName || '').toLowerCase().trim();
+    const assignedId = String(o.assignedEmployeeId || '').toLowerCase().trim();
+
+    return (
+      (empEmail && (createdBy === empEmail || createdBy.includes(empEmail))) ||
+      (empUsername && (createdBy === empUsername || createdBy.includes(empUsername))) ||
+      (empId && (createdBy === empId || assignedId === empId)) ||
+      (empName && (createdByName === empName || assignedId === empName))
+    );
   });
-  
-  res.json({ payroll: payrollList, history: payrollHistory });
+
+  let immediateProductCount = 0;
+  let pendingItemCount = 0;
+  let immediateProductAmount = 0;
+  let pendingItemAmount = 0;
+
+  empOrders.forEach(o => {
+    const items = Array.isArray(o.items) ? o.items : [];
+    const hasValidProduct = items.length > 0 && items.some((i: any) => {
+      if (!i) return false;
+      const n = String(i.name || '').trim().toLowerCase();
+      return n !== '' && n !== 'pending' && n !== 'pending item' && n !== 'tbd' && n !== 'unassigned' && n !== 'unknown';
+    });
+
+    const isImmediate = Boolean(o.productAdvance || o.incentiveEarned === 50 || o.productAdvanceIncentive === 50 || hasValidProduct);
+
+    if (isImmediate) {
+      immediateProductCount++;
+      immediateProductAmount += 50;
+    } else {
+      pendingItemCount++;
+      pendingItemAmount += 30;
+    }
+  });
+
+  const accumulatedLiveIncentives = immediateProductAmount + pendingItemAmount;
+
+  // 3. Past Payout Deductions from Ledger
+  const empPayouts = payrollHistory.filter(p => {
+    if (!p) return false;
+    return String(p.employeeId) === empId || String(p.employeeName).toLowerCase().trim() === empName;
+  });
+
+  const totalPastPaid = empPayouts.reduce((sum, p) => {
+    const amt = Number(p.payoutAmount !== undefined ? p.payoutAmount : p.totalPaid) || 0;
+    return sum + amt;
+  }, 0);
+
+  // 4. Total Due Balance Deduction: (Base Salary + Incentives) - Past Paid Out
+  const totalGrossEarned = accumulatedBaseSalary + accumulatedLiveIncentives;
+  const totalDueBalance = Math.max(0, totalGrossEarned - totalPastPaid);
+
+  let settlementStatus = 'In Progress';
+  if (currentCycle.isSettlementDue || totalDueBalance >= payoutRate) {
+    settlementStatus = 'Settlement Due';
+  } else if (totalDueBalance === 0) {
+    settlementStatus = 'Up to Date';
+  }
+
+  let milestoneNotice = '';
+  if (accumulatedLiveIncentives >= 2000) {
+    milestoneNotice = `⭐ Top Performer Milestone: ₹${accumulatedLiveIncentives.toLocaleString()} in incentives`;
+  } else if (accumulatedLiveIncentives >= 1000) {
+    milestoneNotice = `🎯 Incentive Milestone: ₹${accumulatedLiveIncentives.toLocaleString()} achieved`;
+  } else if (currentCycle.daysRemaining <= 3) {
+    milestoneNotice = `⏰ Cycle #${currentCycle.cycleNumber} ending in ${currentCycle.daysRemaining} days`;
+  }
+
+  return {
+    id: emp.id,
+    name: emp.name,
+    role: emp.role || 'Staff Operator',
+    email: emp.email || '',
+    phone: emp.phone || '',
+    status: emp.status || 'Active',
+    joining_date: joiningDate,
+    joiningDate,
+    baseSalaryRate: payoutRate,
+    salary: payoutRate,
+    currentCycle,
+    cycleHistory,
+    accumulatedBaseSalary,
+    accumulatedLiveIncentives,
+    incentives: accumulatedLiveIncentives,
+    totalGrossEarned,
+    totalPastPaid,
+    totalDueBalance,
+    totalPayout: totalDueBalance,
+    statusText: currentCycle.isSettlementDue ? 'Settlement Due' : 'Active Cycle',
+    liveIncentivesBreakdown: {
+      totalOrders: empOrders.length,
+      immediateProductCount,
+      pendingItemCount,
+      immediateProductAmount,
+      pendingItemAmount
+    },
+    settlementStatus,
+    milestoneNotice,
+    payoutLogs: empPayouts
+  };
+}
+
+// API endpoint: Get live employee profile for employee dashboard / profile modal
+app.get('/api/employees/profile/:id', (req, res) => {
+  const { id } = req.params;
+  const emp = mockEmployees.find(e => String(e.id) === String(id) || (e.email || '').toLowerCase() === String(id).toLowerCase());
+  if (!emp) {
+    return res.status(404).json({ success: false, error: 'Employee not found.' });
+  }
+
+  const profileData = computeEmployeeFinancialsServer(emp);
+  res.json({ success: true, profile: profileData });
 });
 
-// API endpoint: Approve & Pay individual monthly salary and reset cycle from specified date
-app.post('/api/payroll/approve', async (req, res) => {
-  const { employeeId, employeeName, role, month, salaryAmount, incentiveAmount, totalPaid, notes, resetDate, date } = req.body;
-  const targetMonth = month || 'July 2026';
-
-  if (!employeeId) {
-    return res.status(400).json({ error: 'employeeId is required' });
+// API endpoint: Centralized Admin & Manager Payroll & Payout Management View
+app.get('/api/payroll', (req, res) => {
+  // Role-Based Access: Restrict strictly to Admin and Manager roles
+  if (!isAuthorizedForPayouts(req)) {
+    return res.status(403).json({ 
+      error: 'Access denied: Payout viewing and approval permissions are restricted strictly to Admin and Manager roles.' 
+    });
   }
 
-  const recordKey = `${employeeId}_${targetMonth}`;
-  paidRecords[recordKey] = 'Paid';
-  savePayrollStatus();
-
-  const chosenDate = resetDate || date;
-  const defaultNextMinute = getNextMinuteTimestamp();
-  let resetTimestamp = defaultNextMinute;
-
-  if (chosenDate && chosenDate !== 'next-minute') {
-    const dateStr = String(chosenDate).trim();
-    const parsed = new Date(dateStr.includes('T') ? dateStr : dateStr.replace(' ', 'T')).getTime();
-    if (!isNaN(parsed)) {
-      resetTimestamp = parsed;
-    }
-  }
-  
-  // Set 30-day payroll payment record & reset active order counter
-  const dateFormatted = new Date(resetTimestamp).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
-  lastPayrollPaidMap[employeeId] = {
-    timestamp: resetTimestamp,
-    dateStr: dateFormatted,
-    month: targetMonth,
-    amount: Number(totalPaid) || 0
-  };
-  savePayrollPaidDates();
-
-  lastIncentiveReset[employeeId] = resetTimestamp;
-  saveIncentiveData();
-
-  if (isFirebaseEnabled && firestoreDb) {
-    try {
-      await setDoc(doc(firestoreDb, 'payroll_paid_dates', String(employeeId)), {
-        employeeId,
-        timestamp: resetTimestamp,
-        dateStr: dateFormatted,
-        month: targetMonth,
-        amount: Number(totalPaid) || 0
-      });
-      await setDoc(doc(firestoreDb, 'incentive_resets', String(employeeId)), {
-        employeeId,
-        resetTime: resetTimestamp,
-        updatedAt: new Date().toISOString()
-      });
-    } catch (e) {
-      console.error('[Firebase] Failed to save payroll approve to firestore:', e);
-    }
-  }
-
-  const matchedEmp = mockEmployees.find(e => String(e.id) === String(employeeId) || e.name === employeeName);
-  const employeePhone = matchedEmp?.phone || '';
-  const recountFromStr = new Date(resetTimestamp).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' });
-
-  const historyEntry = {
-    id: `pay-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-    employeeId,
-    employeeName: employeeName || matchedEmp?.name || 'Employee',
-    role: role || matchedEmp?.role || 'Staff Operator',
-    month: targetMonth,
-    salaryAmount: Number(salaryAmount) || 0,
-    incentiveAmount: Number(incentiveAmount) || 0,
-    totalPaid: Number(totalPaid) || (Number(salaryAmount) + Number(incentiveAmount)),
-    payoutDate: new Date(resetTimestamp).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' }),
-    status: 'Paid',
-    notes: notes || `Monthly salary approved for ${targetMonth}`,
-    phone: employeePhone,
-    recountFrom: recountFromStr
-  };
-
-  payrollHistory.unshift(historyEntry);
-  savePayrollHistory();
-
-  const smsNotification = `Dear ${historyEntry.employeeName}, your salary of ₹${historyEntry.totalPaid.toLocaleString()} for ${targetMonth} has been credited successfully to your account. (Base Salary: ₹${historyEntry.salaryAmount.toLocaleString()} + Performance Incentives: ₹${historyEntry.incentiveAmount.toLocaleString()}). Next performance cycle starts from: ${recountFromStr}. - Dappersfit Logistics`;
-
-  let cleanPhone = employeePhone.replace(/\D/g, '');
-  if (cleanPhone.length === 10) {
-    cleanPhone = '91' + cleanPhone;
-  }
-  const whatsappUrl = cleanPhone ? `https://api.whatsapp.com/send?phone=${cleanPhone}&text=${encodeURIComponent(smsNotification)}` : '';
+  const eligibleEmployees = mockEmployees.filter(emp => !isExcludedFromPayrollAndIncentives(emp));
+  const payrollList = eligibleEmployees.map(emp => computeEmployeeFinancialsServer(emp));
 
   res.json({ 
     success: true, 
+    payroll: payrollList, 
+    history: payrollHistory,
+    meta: {
+      totalEmployees: payrollList.length,
+      totalAccumulatedDue: payrollList.reduce((sum, e) => sum + e.totalDueBalance, 0),
+      totalHistoricalPaid: payrollHistory.reduce((sum, h) => sum + (Number(h.payoutAmount || h.totalPaid) || 0), 0)
+    }
+  });
+});
+
+// API endpoint: Process Custom Partial Payout with Strict Validation Rule (Prevent Overpayment)
+app.post('/api/payroll/payout', async (req, res) => {
+  // Role-Based Access: Restrict strictly to Admin and Manager roles
+  if (!isAuthorizedForPayouts(req)) {
+    return res.status(403).json({ 
+      error: 'Access denied: Payout viewing and approval permissions are restricted strictly to Admin and Manager roles.' 
+    });
+  }
+
+  const { employeeId, payoutAmount, paymentMethod, notes, processedBy } = req.body;
+  if (!employeeId) {
+    return res.status(400).json({ error: 'employeeId is required.' });
+  }
+
+  const matchedEmp = mockEmployees.find(e => String(e.id) === String(employeeId));
+  if (!matchedEmp) {
+    return res.status(404).json({ error: 'Employee not found in registry.' });
+  }
+
+  // 1. Compute current financial summary and total due balance
+  const currentSummary = computeEmployeeFinancialsServer(matchedEmp);
+  const currentDueBalance = currentSummary.totalDueBalance;
+
+  const amount = Number(payoutAmount);
+  if (!amount || isNaN(amount) || amount <= 0) {
+    return res.status(400).json({ error: 'Payout amount must be a valid positive number.' });
+  }
+
+  // 2. Strict Validation Rule: Prevent Overpayment
+  if (amount > currentDueBalance) {
+    return res.status(400).json({ 
+      error: `Overpayment blocked: Requested payout of ₹${amount.toLocaleString()} exceeds the employee's current total due balance of ₹${currentDueBalance.toLocaleString()}.` 
+    });
+  }
+
+  // 3. Balance Deduction & Transaction Creation
+  const remainingDueBalance = currentDueBalance - amount;
+  const payoutType = amount === currentDueBalance ? 'Full Settlement' : 'Partial Payout';
+  const timestamp = Date.now();
+  const payoutDateFormatted = new Date(timestamp).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' });
+
+  const transaction = {
+    id: `pay-${timestamp}-${Math.floor(Math.random() * 1000)}`,
+    employeeId: matchedEmp.id,
+    employeeName: matchedEmp.name,
+    role: matchedEmp.role || 'Staff Operator',
+    phone: matchedEmp.phone || '',
+    payoutAmount: amount,
+    totalPaid: amount,
+    payoutType,
+    previousDueBalance: currentDueBalance,
+    remainingDueBalance,
+    accumulatedBaseSalaryAtPayment: currentSummary.accumulatedBaseSalary,
+    accumulatedIncentivesAtPayment: currentSummary.accumulatedLiveIncentives,
+    cycleNumber: currentSummary.currentCycle.cycleNumber,
+    cycleDateRange: `${currentSummary.currentCycle.startDateFormatted} - ${currentSummary.currentCycle.endDateFormatted}`,
+    payoutDate: payoutDateFormatted,
+    timestamp,
+    processedBy: processedBy || (req.headers['x-user-name'] as string) || 'Admin',
+    paymentMethod: paymentMethod || 'Bank Transfer / UPI',
+    notes: notes || `${payoutType} of ₹${amount.toLocaleString()} disbursed`,
+    status: 'Paid'
+  };
+
+  payrollHistory.unshift(transaction);
+  savePayrollHistory();
+
+  if (isFirebaseEnabled && firestoreDb) {
+    try {
+      await setDoc(doc(firestoreDb, 'payroll_history', String(transaction.id)), sanitizeForFirestore(transaction));
+    } catch (e) {
+      console.error('[Firebase] Failed to save payout transaction:', e);
+    }
+  }
+
+  // 4. SMS & WhatsApp Notifications
+  const smsNotification = `Dear ${matchedEmp.name}, your ${payoutType.toLowerCase()} of ₹${amount.toLocaleString()} has been credited successfully. Remaining due balance: ₹${remainingDueBalance.toLocaleString()}. Active Cycle: #${currentSummary.currentCycle.cycleNumber} (${currentSummary.currentCycle.startDateFormatted} - ${currentSummary.currentCycle.endDateFormatted}). - Dappersfit Logistics`;
+
+  let cleanPhone = (matchedEmp.phone || '').replace(/\D/g, '');
+  if (cleanPhone.length === 10) cleanPhone = '91' + cleanPhone;
+  const whatsappUrl = cleanPhone ? `https://api.whatsapp.com/send?phone=${cleanPhone}&text=${encodeURIComponent(smsNotification)}` : '';
+
+  res.json({
+    success: true,
+    message: `${payoutType} of ₹${amount.toLocaleString()} processed successfully.`,
+    transaction,
+    remainingDueBalance,
+    history: payrollHistory,
+    employeePhone: matchedEmp.phone,
+    smsNotification,
+    whatsappUrl
+  });
+});
+
+// API endpoint: Legacy approve wrapper
+app.post('/api/payroll/approve', async (req, res) => {
+  if (!isAuthorizedForPayouts(req)) {
+    return res.status(403).json({ 
+      error: 'Access denied: Payout viewing and approval permissions are restricted strictly to Admin and Manager roles.' 
+    });
+  }
+
+  const { employeeId, totalPaid, salaryAmount, incentiveAmount, notes, processedBy } = req.body;
+  const matchedEmp = mockEmployees.find(e => String(e.id) === String(employeeId));
+  if (!matchedEmp) return res.status(404).json({ error: 'Employee not found' });
+
+  const currentSummary = computeEmployeeFinancialsServer(matchedEmp);
+  const currentDueBalance = currentSummary.totalDueBalance;
+  const requestedAmount = Number(totalPaid !== undefined ? totalPaid : (Number(salaryAmount || 0) + Number(incentiveAmount || 0))) || currentDueBalance;
+  const finalAmount = Math.min(requestedAmount, currentDueBalance);
+
+  if (finalAmount <= 0) {
+    return res.status(400).json({ error: 'Total due balance is zero. No pending payment owed.' });
+  }
+
+  const remainingDueBalance = currentDueBalance - finalAmount;
+  const payoutType = finalAmount === currentDueBalance ? 'Full Settlement' : 'Partial Payout';
+  const timestamp = Date.now();
+  const payoutDateFormatted = new Date(timestamp).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' });
+
+  const transaction = {
+    id: `pay-${timestamp}-${Math.floor(Math.random() * 1000)}`,
+    employeeId: matchedEmp.id,
+    employeeName: matchedEmp.name,
+    role: matchedEmp.role || 'Staff Operator',
+    phone: matchedEmp.phone || '',
+    payoutAmount: finalAmount,
+    totalPaid: finalAmount,
+    payoutType,
+    previousDueBalance: currentDueBalance,
+    remainingDueBalance,
+    accumulatedBaseSalaryAtPayment: currentSummary.accumulatedBaseSalary,
+    accumulatedIncentivesAtPayment: currentSummary.accumulatedLiveIncentives,
+    cycleNumber: currentSummary.currentCycle.cycleNumber,
+    cycleDateRange: `${currentSummary.currentCycle.startDateFormatted} - ${currentSummary.currentCycle.endDateFormatted}`,
+    payoutDate: payoutDateFormatted,
+    timestamp,
+    processedBy: processedBy || 'Admin',
+    paymentMethod: 'Bank Transfer / UPI',
+    notes: notes || `Disbursement for Cycle #${currentSummary.currentCycle.cycleNumber}`,
+    status: 'Paid'
+  };
+
+  payrollHistory.unshift(transaction);
+  savePayrollHistory();
+
+  const smsNotification = `Dear ${matchedEmp.name}, your payout of ₹${finalAmount.toLocaleString()} has been credited successfully. Remaining due balance: ₹${remainingDueBalance.toLocaleString()}. Active Cycle: #${currentSummary.currentCycle.cycleNumber}. - Dappersfit Logistics`;
+
+  let cleanPhone = (matchedEmp.phone || '').replace(/\D/g, '');
+  if (cleanPhone.length === 10) cleanPhone = '91' + cleanPhone;
+  const whatsappUrl = cleanPhone ? `https://api.whatsapp.com/send?phone=${cleanPhone}&text=${encodeURIComponent(smsNotification)}` : '';
+
+  res.json({
+    success: true,
     message: 'Your salary is credited successfully',
-    historyEntry, 
-    history: payrollHistory, 
-    paidRecords, 
-    resetTime: resetTimestamp,
-    recountFrom: recountFromStr,
-    employeePhone,
+    historyEntry: transaction,
+    history: payrollHistory,
+    remainingDueBalance,
     smsNotification,
     whatsappUrl
   });
@@ -3261,74 +3803,27 @@ app.post('/api/shiprocket/wallet/balance-details/sync', async (req, res) => {
 
 // API Route: Get pickup addresses from Shiprocket (Live/Simulated)
 app.get('/api/shiprocket/pickup-addresses', async (req, res) => {
-  if (isLiveConfigured()) {
-    try {
-      const headers = await getShiprocketAuthHeaders();
-      const pickupData = await shiprocket.rawRequest('/settings/company/pickup', 'GET', headers);
-      if (pickupData && pickupData.data && pickupData.data.shipping_address) {
-        // Return active shipping addresses from shiprocket
-        const mapped = pickupData.data.shipping_address.map((addr: any) => ({
-          name: addr.pickup_location,
-          pincode: addr.pin_code,
-          address: addr.address + (addr.address_2 ? ', ' + addr.address_2 : ''),
-          city: addr.city,
-          state: addr.state,
-          phone: addr.phone,
-          isLive: true
-        }));
-        return res.json({ success: true, addresses: mapped });
-      }
-    } catch (err: any) {
-      console.error('[Shiprocket] Error fetching pickup addresses:', err);
-    }
+  try {
+    const headers = isLiveConfigured() ? await getShiprocketAuthHeaders() : {};
+    const addresses = await getRegisteredPickupLocationsList(headers);
+    return res.json({ success: true, addresses });
+  } catch (err: any) {
+    console.error('[Shiprocket] Error fetching pickup addresses:', err);
+    return res.json({ success: true, addresses: SIMULATED_PICKUP_LOCATIONS });
   }
-
-  // Fallback / Default simulated addresses with 'Dapers' as the default
-  res.json({
-    success: true,
-    addresses: [
-      {
-        name: 'Chennai Central Fulfillment Hub (Primary)',
-        pincode: '600002',
-        address: 'No-7 athipattan street, opp to omanthur hospital, Chintadripet, Chennai',
-        city: 'Chennai',
-        state: 'Tamil Nadu',
-        phone: '9982760943',
-        isLive: true
-      },
-      {
-        name: 'Dappers Hub',
-        pincode: '560068',
-        address: '97 Sai Shakti Layout, Bettdasanapura, Electronic City, Bangalore',
-        city: 'Bangalore',
-        state: 'Karnataka',
-        phone: '8073548204',
-        isLive: false
-      },
-      {
-        name: 'Pune Warehouse',
-        pincode: '411037',
-        address: 'Pune Dispatch Block, Hinjawadi Phase 2, Pune',
-        city: 'Pune',
-        state: 'Maharashtra',
-        phone: '9041935824',
-        isLive: false
-      }
-    ]
-  });
 });
 
 // API Route: Courier serviceability query
 app.post('/api/shiprocket/serviceability', async (req, res) => {
-  const { delivery_postcode, weight, cod, pickup_postcode } = req.body;
+  const { delivery_postcode, weight, cod, pickup_postcode, pickup_location } = req.body;
 
   if (isLiveConfigured()) {
     try {
       const headers = await getShiprocketAuthHeaders();
       let resolvedPickup = pickup_postcode;
-      if (!resolvedPickup || resolvedPickup === '411037') {
-        const details = await getRegisteredPickupDetails(headers);
-        resolvedPickup = details.pickupPostcode;
+      if (!resolvedPickup) {
+        const details = await validateAndResolvePickupLocation(headers, pickup_location, pickup_postcode, undefined, true);
+        resolvedPickup = details.location?.pincode || '600002';
       }
       const endpoint = `/courier/serviceability?pickup_postcode=${resolvedPickup}&delivery_postcode=${delivery_postcode || '531036'}&weight=${(weight || 0.5).toString()}&cod=${(cod !== undefined ? (cod ? '1' : '0') : '1')}`;
       
@@ -3391,7 +3886,7 @@ function formatShiprocketError(rawError: any): string {
 // API Route: Book Shiprocket order
 app.post('/api/shiprocket/order/book', async (req, res) => {
   clearShiprocketCache();
-  const { orderId, courier, assignedEmployeeId, deliveryAddress, pickupLocationName, pickupPostcode } = req.body;
+  const { orderId, courier, assignedEmployeeId, deliveryAddress, pickupLocationName, pickupPostcode, pickupAddress } = req.body;
 
   const orderToBook = mockOrders.find(o => String(o.id) === String(orderId) || String(o.orderNumber) === String(orderId));
 
@@ -3408,195 +3903,254 @@ app.post('/api/shiprocket/order/book', async (req, res) => {
     });
   }
 
+  // Existing shipment guard: if the shipment is already booked, retrieve its existing label instead of booking it again
+  if (orderToBook.status === 'booked' && (orderToBook.shipmentId || orderToBook.shiprocketOrderId)) {
+    console.log(`[Shiprocket Manual Booking] Order ${orderToBook.orderNumber || orderId} is already booked (Shipment ID: ${orderToBook.shipmentId}). Retrieving existing label...`);
+    let labelUrl = orderToBook.labelUrl;
+    let labelGenerated = !!labelUrl;
+
+    if (!labelUrl && isLiveConfigured() && orderToBook.shipmentId) {
+      try {
+        const headers = await getShiprocketAuthHeaders();
+        const labelResult = await generateOrFetchShiprocketLabel(
+          headers,
+          orderToBook.shipmentId,
+          orderToBook.orderNumber || orderToBook.id,
+          2,
+          1000
+        );
+        if (labelResult.success && labelResult.labelUrl) {
+          labelUrl = labelResult.labelUrl;
+          labelGenerated = true;
+          orderToBook.labelUrl = labelUrl;
+          await saveSingleOrderToDb(orderToBook);
+        }
+      } catch (lErr) {
+        console.warn('[Shiprocket] Failed to retrieve label for already booked order:', lErr);
+      }
+    }
+
+    return res.json({
+      success: true,
+      status: 'booked',
+      order: orderToBook,
+      shiprocketOrderId: String(orderToBook.shiprocketOrderId || ''),
+      shipmentId: String(orderToBook.shipmentId || ''),
+      awbCode: String(orderToBook.awbCode || ''),
+      courierName: orderToBook.courierName || 'Courier Partner',
+      pickupLocation: orderToBook.pickupLocation,
+      labelUrl: orderToBook.labelUrl,
+      labelGenerated,
+      alreadyBooked: true
+    });
+  }
+
   if (!courier || typeof courier.rate !== 'number') {
     return res.status(400).json({ success: false, error: 'Invalid courier parameters.' });
   }
+
+  if (deliveryAddress) {
+    orderToBook.address = deliveryAddress;
+  }
+
+  const requestedPickupName = pickupLocationName || pickupAddress?.name;
+  const requestedPickupPin = pickupPostcode || pickupAddress?.pincode;
 
   if (isLiveConfigured()) {
     try {
       const headers = await getShiprocketAuthHeaders();
 
-      if (orderToBook) {
-        if (deliveryAddress) {
-          orderToBook.address = deliveryAddress;
+      // Issue 1: Validate selected pickup address against registered Shiprocket locations
+      // Never silently substitute default warehouse!
+      const pickupRes = await validateAndResolvePickupLocation(
+        headers,
+        requestedPickupName,
+        requestedPickupPin,
+        pickupAddress,
+        false // Manual booking: requires an explicitly selected/specified location
+      );
+
+      if (!pickupRes.success || !pickupRes.location) {
+        console.error('[Shiprocket Manual Booking] Pickup location validation failed:', pickupRes.error);
+        return res.status(400).json({
+          success: false,
+          status: 'failed',
+          error: pickupRes.error
+        });
+      }
+
+      const resolvedPickupLocation = pickupRes.location;
+      console.log(`[Shiprocket Manual Booking] Confirmed registered pickup location: "${resolvedPickupLocation.name}" (PIN: ${resolvedPickupLocation.pincode})`);
+
+      const isPrepaid = orderToBook.paymentMethod && orderToBook.paymentMethod.toUpperCase() === 'PREPAID';
+      const orderPayload = {
+        order_id: `DF-${orderToBook.orderNumber}-${Date.now()}`,
+        order_date: orderToBook.date,
+        pickup_location: resolvedPickupLocation.name,
+        billing_customer_name: orderToBook.customerName.length >= 3 ? orderToBook.customerName : `${orderToBook.customerName} Customer`,
+        billing_last_name: orderToBook.customerName.split(' ').slice(1).join(' ') || '',
+        billing_address: orderToBook.address.address.length >= 10 ? orderToBook.address.address : `${orderToBook.address.address} Main Road`,
+        billing_city: orderToBook.address.city,
+        billing_pincode: orderToBook.address.pincode,
+        billing_state: orderToBook.address.state,
+        billing_country: 'India',
+        billing_email: orderToBook.address.email || 'customer@dappersfit.com',
+        billing_phone: cleanPhoneNumber(orderToBook.address.phone),
+        shipping_is_billing: true,
+        order_items: (orderToBook.items && orderToBook.items.length > 0)
+          ? orderToBook.items.map(i => ({
+              name: i.name || 'Electronic Gadget',
+              sku: i.sku || 'SKU-ELEC',
+              units: i.quantity || 1,
+              selling_price: i.price || (orderToBook.totalAmount / (i.quantity || 1)) || 999
+            }))
+          : [{
+              name: 'Electronic Gadget',
+              sku: 'SKU-ELEC-01',
+              units: 1,
+              selling_price: orderToBook.totalAmount || 1499
+            }],
+        payment_method: isPrepaid ? 'Prepaid' : 'COD',
+        sub_total: orderToBook.totalAmount,
+        length: Math.max(0.5, Number(orderToBook.dimensions?.length) || 15),
+        breadth: Math.max(0.5, Number(orderToBook.dimensions?.width) || 15),
+        height: Math.max(0.5, Number(orderToBook.dimensions?.height) || 10),
+        weight: Math.max(0.01, Number(orderToBook.weight) || 0.5)
+      };
+
+      const createData = await shiprocket.rawRequest('/orders/create/adhoc', 'POST', headers, orderPayload);
+      const shiprocketId = createData?.order_id || createData?.data?.order_id || createData?.response?.data?.order_id;
+      const shipmentId = createData?.shipment_id || createData?.data?.shipment_id || createData?.response?.data?.shipment_id || createData?.shipmentId || createData?.data?.shipmentId;
+
+      if (!shipmentId || !shiprocketId) {
+        const createErrMsg = createData?.message || createData?.response?.data?.message || createData?.error || (createData?.errors ? JSON.stringify(createData.errors) : 'Shiprocket order creation failed.');
+        console.error('[Shiprocket Booking Failed] Order creation rejected:', createErrMsg);
+        orderToBook.status = 'failed';
+        orderToBook.errorMessage = createErrMsg;
+        await saveSingleOrderToDb(orderToBook);
+        return res.status(400).json({
+          success: false,
+          status: 'failed',
+          error: createErrMsg
+        });
+      }
+
+      // Assign AWB
+      let awbCode = '';
+      let assignedCourierName = courier.courierName;
+
+      try {
+        const awbPayload: any = { shipment_id: shipmentId };
+        if (courier.courierId) {
+          awbPayload.courier_id = courier.courierId;
         }
-        // Dynamically resolve pickup location nickname from user's registered Shiprocket addresses
-        let pickupLocation = pickupLocationName;
-        if (!pickupLocation) {
-          const pickupDetails = await getRegisteredPickupDetails(headers);
-          pickupLocation = pickupDetails.pickupLocation;
-        }
-        console.log(`[Shiprocket] Dynamically resolved pickup location nickname: "${pickupLocation}"`);
-
-        const isPrepaid = orderToBook.paymentMethod && orderToBook.paymentMethod.toUpperCase() === 'PREPAID';
-        const orderPayload = {
-          order_id: `DF-${orderToBook.orderNumber}-${Date.now()}`,
-          order_date: orderToBook.date,
-          pickup_location: pickupLocation,
-          billing_customer_name: orderToBook.customerName.length >= 3 ? orderToBook.customerName : `${orderToBook.customerName} Customer`,
-          billing_last_name: orderToBook.customerName.split(' ').slice(1).join(' ') || '',
-          billing_address: orderToBook.address.address.length >= 10 ? orderToBook.address.address : `${orderToBook.address.address} Main Road`,
-          billing_city: orderToBook.address.city,
-          billing_pincode: orderToBook.address.pincode,
-          billing_state: orderToBook.address.state,
-          billing_country: 'India',
-          billing_email: orderToBook.address.email || 'customer@dappersfit.com',
-          billing_phone: cleanPhoneNumber(orderToBook.address.phone),
-          shipping_is_billing: true,
-          order_items: (orderToBook.items && orderToBook.items.length > 0)
-            ? orderToBook.items.map(i => ({
-                name: i.name || 'Electronic Gadget',
-                sku: i.sku || 'SKU-ELEC',
-                units: i.quantity || 1,
-                selling_price: i.price || (orderToBook.totalAmount / (i.quantity || 1)) || 999
-              }))
-            : [{
-                name: 'Electronic Gadget',
-                sku: 'SKU-ELEC-01',
-                units: 1,
-                selling_price: orderToBook.totalAmount || 1499
-              }],
-          payment_method: isPrepaid ? 'Prepaid' : 'COD',
-          sub_total: orderToBook.totalAmount,
-          length: Math.max(0.5, Number(orderToBook.dimensions?.length) || 15),
-          breadth: Math.max(0.5, Number(orderToBook.dimensions?.width) || 15),
-          height: Math.max(0.5, Number(orderToBook.dimensions?.height) || 10),
-          weight: Math.max(0.01, Number(orderToBook.weight) || 0.5)
-        };
-
-        const createData = await shiprocket.rawRequest('/orders/create/adhoc', 'POST', headers, orderPayload);
-        const shiprocketId = createData?.order_id || createData?.data?.order_id || createData?.response?.data?.order_id;
-        const shipmentId = createData?.shipment_id || createData?.data?.shipment_id || createData?.response?.data?.shipment_id || createData?.shipmentId || createData?.data?.shipmentId;
-
-        if (!shipmentId || !shiprocketId) {
-          const createErrMsg = createData?.message || createData?.response?.data?.message || createData?.error || (createData?.errors ? JSON.stringify(createData.errors) : 'Shiprocket order creation failed.');
-          console.error('[Shiprocket Booking Failed] Order creation rejected:', createErrMsg);
-          orderToBook.status = 'failed';
-          orderToBook.errorMessage = createErrMsg;
-          await saveSingleOrderToDb(orderToBook);
-          return res.status(400).json({
-            success: false,
-            status: 'failed',
-            error: createErrMsg
-          });
+        let awbData = await shiprocket.rawRequest('/courier/assign/awb', 'POST', headers, awbPayload);
+        awbCode = awbData?.response?.data?.awb_code || awbData?.data?.awb_code || awbData?.awb_code || awbData?.response?.awb_code || '';
+        if (awbData?.response?.data?.courier_name) {
+          assignedCourierName = awbData.response.data.courier_name;
         }
 
-        // Assign AWB
-        let awbCode = '';
-        let assignedCourierName = courier.courierName;
-
-        try {
-          const awbPayload: any = { shipment_id: shipmentId };
-          if (courier.courierId) {
-            awbPayload.courier_id = courier.courierId;
-          }
-          let awbData = await shiprocket.rawRequest('/courier/assign/awb', 'POST', headers, awbPayload);
+        // Fallback: If specific courier had no AWB, attempt auto-assign courier on Shiprocket
+        if (!awbCode && courier.courierId) {
+          console.log(`[Shiprocket] Specific courier ${courier.courierId} returned no AWB, attempting auto-assign...`);
+          awbData = await shiprocket.rawRequest('/courier/assign/awb', 'POST', headers, { shipment_id: shipmentId });
           awbCode = awbData?.response?.data?.awb_code || awbData?.data?.awb_code || awbData?.awb_code || awbData?.response?.awb_code || '';
           if (awbData?.response?.data?.courier_name) {
             assignedCourierName = awbData.response.data.courier_name;
           }
-
-          // Fallback: If specific courier had no AWB, attempt auto-assign courier on Shiprocket
-          if (!awbCode && courier.courierId) {
-            console.log(`[Shiprocket] Specific courier ${courier.courierId} returned no AWB, attempting auto-assign...`);
-            awbData = await shiprocket.rawRequest('/courier/assign/awb', 'POST', headers, { shipment_id: shipmentId });
-            awbCode = awbData?.response?.data?.awb_code || awbData?.data?.awb_code || awbData?.awb_code || awbData?.response?.awb_code || '';
-            if (awbData?.response?.data?.courier_name) {
-              assignedCourierName = awbData.response.data.courier_name;
-            }
-          }
-
-          if (!awbCode) {
-            const specificErr = 
-              awbData?.response?.data?.awb_assign_error ||
-              awbData?.response?.data?.message ||
-              awbData?.response?.message ||
-              awbData?.message ||
-              awbData?.error ||
-              'AWB Assignment failed in Shiprocket. Courier may not be serviceable or wallet balance is low.';
-            throw new Error(specificErr);
-          }
-        } catch (awbErr: any) {
-          const errMsg = awbErr.message || String(awbErr);
-          console.error('[Shiprocket Live Booking Failed] AWB Assignment failed:', errMsg);
-          
-          try {
-             await shiprocket.rawRequest('/orders/cancel', 'POST', headers, { ids: [Number(shiprocketId) || shiprocketId] });
-             console.log(`[Shiprocket] Successfully cancelled order ${shiprocketId} due to AWB assignment failure.`);
-          } catch (cancelErr) {
-             console.error(`[Shiprocket] Failed to cancel order ${shiprocketId} after AWB error:`, cancelErr);
-          }
-          
-          orderToBook.status = 'failed';
-          orderToBook.errorMessage = errMsg;
-          // Clear out the ids since we cancelled it
-          orderToBook.shiprocketOrderId = undefined;
-          orderToBook.shipmentId = undefined;
-          await saveSingleOrderToDb(orderToBook);
-          return res.status(400).json({
-            success: false,
-            status: 'failed',
-            error: errMsg
-          });
         }
 
-        // Attempt label generation from official Shiprocket API
-        let labelUrl = '';
-        let labelGenerated = false;
+        if (!awbCode) {
+          const specificErr = 
+            awbData?.response?.data?.awb_assign_error ||
+            awbData?.response?.data?.message ||
+            awbData?.response?.message ||
+            awbData?.message ||
+            awbData?.error ||
+            'AWB Assignment failed in Shiprocket. Courier may not be serviceable or wallet balance is low.';
+          throw new Error(specificErr);
+        }
+      } catch (awbErr: any) {
+        const errMsg = awbErr.message || String(awbErr);
+        console.error('[Shiprocket Live Booking Failed] AWB Assignment failed:', errMsg);
+        
         try {
-          const labelData = await shiprocket.rawRequest('/courier/generate/label', 'POST', headers, { shipment_id: [Number(shipmentId) || shipmentId] });
-          const rawLabelUrl = labelData?.label_url || labelData?.response?.label_url || labelData?.url || labelData?.pdf_url || '';
-          if (rawLabelUrl) {
-            labelUrl = `/api/shiprocket/download-live-pdf?url=${encodeURIComponent(rawLabelUrl)}&filename=Label_${orderToBook.orderNumber || shipmentId}.pdf`;
-            labelGenerated = true;
-            console.log(`[Shiprocket] Official label generated successfully during booking: ${rawLabelUrl}`);
-          } else {
-            throw new Error('Label generation API succeeded but returned no PDF URL.');
-          }
-        } catch (labelErr: any) {
-          console.log(`[Shiprocket] Label generation failed, cancelling order in Shiprocket: ${labelErr.message || labelErr}`);
-          // Cancel order in Shiprocket since label generation failed
-          try {
-            await shiprocket.rawRequest('/orders/cancel', 'POST', headers, { ids: [Number(shiprocketId) || shiprocketId] });
-            console.log(`[Shiprocket] Successfully cancelled order ${shiprocketId} due to label generation failure.`);
-          } catch (cancelErr) {
-            console.error(`[Shiprocket] Failed to cancel order ${shiprocketId} after label error:`, cancelErr);
-          }
-          throw new Error(`Label generation failed: ${labelErr.message || labelErr}`);
+           await shiprocket.rawRequest('/orders/cancel', 'POST', headers, { ids: [Number(shiprocketId) || shiprocketId] });
+           console.log(`[Shiprocket] Successfully cancelled order ${shiprocketId} due to AWB assignment failure.`);
+        } catch (cancelErr) {
+           console.error(`[Shiprocket] Failed to cancel order ${shiprocketId} after AWB error:`, cancelErr);
         }
-
-        // Update local persistent db - Status is 'booked', NEVER 'shipped' until confirmed shipped by Shiprocket!
-        orderToBook.status = 'booked';
-        orderToBook.errorMessage = null;
-        orderToBook.shiprocketOrderId = String(shiprocketId);
-        orderToBook.shipmentId = String(shipmentId);
-        orderToBook.awbCode = String(awbCode);
-        orderToBook.courierName = assignedCourierName;
-        orderToBook.assignedEmployeeId = assignedEmployeeId || orderToBook.assignedEmployeeId;
-        orderToBook.labelUrl = labelGenerated ? labelUrl : undefined;
-        orderToBook.trackingHistory = [
-          { 
-            date: new Date().toISOString().replace('T', ' ').slice(0, 16), 
-            status: 'Booked', 
-            location: `${pickupLocation} (Shiprocket)`, 
-            activity: `Order booked via ${assignedCourierName}. AWB: ${awbCode}.${labelGenerated ? ' Shipping label generated.' : ' Label generation pending in Shiprocket.'}` 
-          }
-        ];
-
+        
+        orderToBook.status = 'failed';
+        orderToBook.errorMessage = errMsg;
+        orderToBook.shiprocketOrderId = undefined;
+        orderToBook.shipmentId = undefined;
         await saveSingleOrderToDb(orderToBook);
-
-        return res.json({
-          success: true,
-          status: 'booked',
-          order: orderToBook,
-          shiprocketOrderId: String(shiprocketId),
-          shipmentId: String(shipmentId),
-          awbCode: String(awbCode),
-          courierName: assignedCourierName,
-          labelUrl: orderToBook.labelUrl,
-          labelGenerated
+        return res.status(400).json({
+          success: false,
+          status: 'failed',
+          error: errMsg
         });
       }
+
+      // Issue 2: Attempt label generation from official Shiprocket API with retry mechanism
+      // Never cancel the order if label generation is delayed!
+      let labelUrl = '';
+      let labelGenerated = false;
+      const labelResult = await generateOrFetchShiprocketLabel(
+        headers,
+        shipmentId,
+        orderToBook.orderNumber || orderToBook.id,
+        3,
+        1500
+      );
+
+      if (labelResult.success && labelResult.labelUrl) {
+        labelUrl = labelResult.labelUrl;
+        labelGenerated = true;
+        console.log(`[Shiprocket] Official label generated successfully during manual booking: ${labelUrl}`);
+      } else {
+        console.log(`[Shiprocket] Official label generation deferred: ${labelResult.error}. Preserving booked order.`);
+        // Preserve any prior valid label if exists
+        labelUrl = orderToBook.labelUrl || '';
+        labelGenerated = !!labelUrl;
+      }
+
+      // Update local persistent db - Status is 'booked'
+      orderToBook.status = 'booked';
+      orderToBook.errorMessage = null;
+      orderToBook.shiprocketOrderId = String(shiprocketId);
+      orderToBook.shipmentId = String(shipmentId);
+      orderToBook.awbCode = String(awbCode);
+      orderToBook.courierName = assignedCourierName;
+      orderToBook.assignedEmployeeId = assignedEmployeeId || orderToBook.assignedEmployeeId;
+      orderToBook.pickupLocation = resolvedPickupLocation.name;
+      orderToBook.pickupAddress = resolvedPickupLocation;
+      orderToBook.labelUrl = labelGenerated ? labelUrl : undefined;
+      orderToBook.trackingHistory = [
+        { 
+          date: new Date().toISOString().replace('T', ' ').slice(0, 16), 
+          status: 'Booked', 
+          location: `${resolvedPickupLocation.name} (${resolvedPickupLocation.city || 'Shiprocket'})`, 
+          activity: `Order booked via ${assignedCourierName}. AWB: ${awbCode}.${labelGenerated ? ' Shipping label generated.' : ' Label generation pending in Shiprocket.'}` 
+        }
+      ];
+
+      await saveSingleOrderToDb(orderToBook);
+
+      return res.json({
+        success: true,
+        status: 'booked',
+        order: orderToBook,
+        shiprocketOrderId: String(shiprocketId),
+        shipmentId: String(shipmentId),
+        awbCode: String(awbCode),
+        courierName: assignedCourierName,
+        pickupLocation: resolvedPickupLocation.name,
+        labelUrl: orderToBook.labelUrl,
+        labelGenerated,
+        labelPending: !labelGenerated
+      });
     } catch (err: any) {
       const liveErrMsg = err.message || 'Shiprocket live order booking failed.';
       console.error('[Shiprocket Live Booking Error]:', liveErrMsg);
@@ -3611,15 +4165,27 @@ app.post('/api/shiprocket/order/book', async (req, res) => {
     }
   }
 
-  // Fallback Simulation bookings (only when live mode is not configured)
+  // Simulation mode: validate requested pickup location as well
+  const simPickupRes = await validateAndResolvePickupLocation(
+    null,
+    requestedPickupName,
+    requestedPickupPin,
+    pickupAddress,
+    false
+  );
+
+  if (!simPickupRes.success || !simPickupRes.location) {
+    return res.status(400).json({
+      success: false,
+      status: 'failed',
+      error: simPickupRes.error
+    });
+  }
+
+  const simResolvedLocation = simPickupRes.location;
   const mockShiprocketId = `SR-${Math.floor(10000000 + Math.random() * 90000000)}`;
   const mockShipmentId = `SM-${Math.floor(10000000 + Math.random() * 90000000)}`;
   const mockAwb = `AWB${Math.floor(100000000 + Math.random() * 900000000)}`;
-
-  if (deliveryAddress) {
-    orderToBook.address = deliveryAddress;
-  }
-  const finalPickupLoc = pickupLocationName || 'Dapers';
   const mockLabelUrl = `/api/shiprocket/download-label-pdf?shipmentId=${encodeURIComponent(mockShipmentId)}`;
   
   orderToBook.status = 'booked';
@@ -3629,13 +4195,15 @@ app.post('/api/shiprocket/order/book', async (req, res) => {
   orderToBook.awbCode = mockAwb;
   orderToBook.courierName = courier.courierName;
   orderToBook.assignedEmployeeId = assignedEmployeeId || orderToBook.assignedEmployeeId;
+  orderToBook.pickupLocation = simResolvedLocation.name;
+  orderToBook.pickupAddress = simResolvedLocation;
   orderToBook.labelUrl = mockLabelUrl;
   orderToBook.trackingHistory = [
     { 
       date: new Date().toISOString().replace('T', ' ').slice(0, 16), 
       status: 'Booked', 
-      location: `${finalPickupLoc} Hub`, 
-      activity: `Shipment booked via ${courier.courierName} (Simulated). Pickup Location: ${finalPickupLoc}.` 
+      location: `${simResolvedLocation.name} (${simResolvedLocation.city || 'MH'})`, 
+      activity: `Shipment booked via ${courier.courierName} (Simulated). Pickup Location: ${simResolvedLocation.name}.` 
     }
   ];
 
@@ -3649,6 +4217,7 @@ app.post('/api/shiprocket/order/book', async (req, res) => {
     shipmentId: mockShipmentId,
     awbCode: mockAwb,
     courierName: courier.courierName,
+    pickupLocation: simResolvedLocation.name,
     labelUrl: mockLabelUrl,
     labelGenerated: true
   });
@@ -3727,15 +4296,20 @@ async function handleBookCourierRequest(req: any, res: any) {
         // =========================================================================
         console.log(`[Shiprocket Sequential Flow] a. Creating adhoc order for ${order.orderNumber}...`);
         
-        let pickupLocation = 'Pune Primary Warehouse';
-        try {
-          const pickupData = await shiprocket.rawRequest('/settings/company/pickup', 'GET', headers);
-          if (pickupData?.data?.shipping_address?.length > 0) {
-            pickupLocation = pickupData.data.shipping_address[0].pickup_location;
-          }
-        } catch (err: any) {
-          console.log('[Shiprocket] Pickup address lookup fallback to default warehouse.');
+        const reqPickup = req.body?.pickupLocationName || req.body?.pickupAddress?.name || order.pickupLocation;
+        const pickupRes = await validateAndResolvePickupLocation(
+          headers,
+          reqPickup,
+          req.body?.pickupPostcode || req.body?.pickupAddress?.pincode,
+          req.body?.pickupAddress,
+          !reqPickup
+        );
+        if (!pickupRes.success || !pickupRes.location) {
+          throw new Error(pickupRes.error);
         }
+        const pickupLocation = pickupRes.location.name;
+        order.pickupLocation = pickupLocation;
+        order.pickupAddress = pickupRes.location;
 
         const isPrepaid = order.paymentMethod && order.paymentMethod.toUpperCase() === 'PREPAID';
         const orderPayload = {
@@ -3823,28 +4397,20 @@ async function handleBookCourierRequest(req: any, res: any) {
         // c. Generate Shipping Label API (/v1/external/courier/generate/label)
         // =========================================================================
         console.log(`[Shiprocket Sequential Flow] c. Generating Shipping Label for shipment ${shipmentId}...`);
-        try {
-          const labelData = await shiprocket.rawRequest('/courier/generate/label', 'POST', headers, {
-            shipment_id: [Number(shipmentId) || shipmentId]
-          });
+        const labelResult = await generateOrFetchShiprocketLabel(
+          headers,
+          shipmentId,
+          order.orderNumber || shipmentId,
+          3,
+          1500
+        );
 
-          const rawLabelUrl = labelData?.label_url || labelData?.response?.label_url || labelData?.pdf_url || labelData?.url || '';
-          if (rawLabelUrl) {
-            labelUrl = `/api/shiprocket/download-live-pdf?url=${encodeURIComponent(rawLabelUrl)}&filename=Label_${order.orderNumber || shipmentId}.pdf`;
-            console.log(`[Shiprocket Sequential Flow] c. Shipping Label captured: ${rawLabelUrl}`);
-          } else {
-            throw new Error('Label generation API succeeded but returned no PDF URL.');
-          }
-        } catch (lblErr: any) {
-          console.log('[Shiprocket Sequential Flow] Label fetch failed, cancelling order in Shiprocket:', lblErr.message || lblErr);
-          // If label fails, cancel the order in Shiprocket so it's not stuck
-          try {
-            await shiprocket.rawRequest('/orders/cancel', 'POST', headers, { ids: [Number(shiprocketOrderId) || shiprocketOrderId] });
-            console.log(`[Shiprocket] Successfully cancelled order ${shiprocketOrderId} due to label generation failure.`);
-          } catch (cancelErr) {
-            console.error(`[Shiprocket] Failed to cancel order ${shiprocketOrderId} after label error:`, cancelErr);
-          }
-          throw new Error(`Label generation failed: ${lblErr.message || lblErr}`);
+        if (labelResult.success && labelResult.labelUrl) {
+          labelUrl = labelResult.labelUrl;
+          console.log(`[Shiprocket Sequential Flow] c. Shipping Label captured: ${labelUrl}`);
+        } else {
+          console.log(`[Shiprocket Sequential Flow] Label generation deferred: ${labelResult.error}. Preserving booked order.`);
+          labelUrl = order.labelUrl || '';
         }
 
       } catch (liveErr: any) {
@@ -3975,7 +4541,7 @@ app.post('/api/orders/:orderId/set-status', async (req, res) => {
 // API Route: Priority Automated Courier Matching and Booking
 app.post('/api/shiprocket/order/priority-book', async (req, res) => {
   clearShiprocketCache();
-  const { orderId, assignedEmployeeId } = req.body;
+  const { orderId, assignedEmployeeId, pickupLocationName, pickupPostcode, pickupAddress } = req.body;
   const orderToBook = mockOrders.find(o => String(o.id) === String(orderId) || String(o.orderNumber) === String(orderId));
 
   if (!orderToBook) {
@@ -3991,21 +4557,86 @@ app.post('/api/shiprocket/order/priority-book', async (req, res) => {
     });
   }
 
-  try {
-    let couriersList = [];
-    let pickupDetails = { pickupLocation: 'dapperss', pickupPostcode: '600002' };
+  // Existing shipment guard: if the shipment is already booked, retrieve its existing label instead of booking it again
+  if (orderToBook.status === 'booked' && (orderToBook.shipmentId || orderToBook.shiprocketOrderId)) {
+    console.log(`[Shiprocket Priority Booking] Order ${orderToBook.orderNumber || orderId} is already booked (Shipment ID: ${orderToBook.shipmentId}). Retrieving existing label...`);
+    let labelUrl = orderToBook.labelUrl;
+    let labelGenerated = !!labelUrl;
 
-    // 1. Check Serviceability
-    if (isLiveConfigured()) {
+    if (!labelUrl && isLiveConfigured() && orderToBook.shipmentId) {
       try {
         const headers = await getShiprocketAuthHeaders();
-        pickupDetails = await getRegisteredPickupDetails(headers);
+        const labelResult = await generateOrFetchShiprocketLabel(
+          headers,
+          orderToBook.shipmentId,
+          orderToBook.orderNumber || orderToBook.id,
+          2,
+          1000
+        );
+        if (labelResult.success && labelResult.labelUrl) {
+          labelUrl = labelResult.labelUrl;
+          labelGenerated = true;
+          orderToBook.labelUrl = labelUrl;
+          await saveSingleOrderToDb(orderToBook);
+        }
+      } catch (lErr) {
+        console.warn('[Shiprocket] Failed to retrieve label for already booked priority order:', lErr);
+      }
+    }
+
+    return res.json({
+      success: true,
+      status: 'booked',
+      order: orderToBook,
+      shiprocketOrderId: String(orderToBook.shiprocketOrderId || ''),
+      shipmentId: String(orderToBook.shipmentId || ''),
+      awbCode: String(orderToBook.awbCode || ''),
+      courierName: orderToBook.courierName || 'Courier Partner',
+      pickupLocation: orderToBook.pickupLocation,
+      rate: 90.00,
+      labelUrl: orderToBook.labelUrl,
+      labelGenerated,
+      alreadyBooked: true
+    });
+  }
+
+  try {
+    let couriersList = [];
+    const requestedLocationName = pickupLocationName || pickupAddress?.name || orderToBook.pickupLocation;
+    const allowDefault = !requestedLocationName; // Only default if order has no specified pickup location
+
+    // 1. Resolve and Validate Pickup Address
+    let resolvedPickupLocation: any;
+    if (isLiveConfigured()) {
+      const headers = await getShiprocketAuthHeaders();
+      const pickupRes = await validateAndResolvePickupLocation(
+        headers,
+        requestedLocationName,
+        pickupPostcode || pickupAddress?.pincode,
+        pickupAddress,
+        allowDefault
+      );
+
+      if (!pickupRes.success || !pickupRes.location) {
+        console.error('[Shiprocket Priority Booking] Pickup validation failed:', pickupRes.error);
+        return res.status(400).json({
+          success: false,
+          status: 'failed',
+          error: pickupRes.error
+        });
+      }
+
+      resolvedPickupLocation = pickupRes.location;
+      console.log(`[Shiprocket Priority Booking] Confirmed pickup location: "${resolvedPickupLocation.name}" (PIN: ${resolvedPickupLocation.pincode})`);
+
+      // Check Serviceability using resolved pickup pincode
+      try {
         const isPrepaid = orderToBook.paymentMethod && orderToBook.paymentMethod.toUpperCase() === 'PREPAID';
         const codQuery = isPrepaid ? '0' : '1';
-        const endpoint = `/courier/serviceability?pickup_postcode=${pickupDetails.pickupPostcode}&delivery_postcode=${orderToBook.address.pincode}&weight=${orderToBook.weight || 0.5}&cod=${codQuery}`;
+        const endpoint = `/courier/serviceability?pickup_postcode=${resolvedPickupLocation.pincode}&delivery_postcode=${orderToBook.address.pincode}&weight=${orderToBook.weight || 0.5}&cod=${codQuery}`;
         const data = await shiprocket.rawRequest(endpoint, 'GET', headers);
         const rawCouriers = data?.data?.available_courier_companies || [];
-        couriersList = rawCouriers.map((c) => ({
+        couriersList = rawCouriers.map((c: any) => ({
           courierId: c.courier_company_id,
           courierName: c.courier_name,
           rate: parseFloat(c.rate || '90.00'),
@@ -4014,9 +4645,28 @@ app.post('/api/shiprocket/order/priority-book', async (req, res) => {
           cod: !!c.cod,
           minWeight: parseFloat(c.min_weight || '0.5')
         }));
-      } catch (err) {
+      } catch (err: any) {
         console.log('Priority booking live serviceability query failed:', err.message || err);
       }
+    } else {
+      // Simulation pickup validation
+      const simPickupRes = await validateAndResolvePickupLocation(
+        null,
+        requestedLocationName,
+        pickupPostcode || pickupAddress?.pincode,
+        pickupAddress,
+        allowDefault
+      );
+
+      if (!simPickupRes.success || !simPickupRes.location) {
+        return res.status(400).json({
+          success: false,
+          status: 'failed',
+          error: simPickupRes.error
+        });
+      }
+
+      resolvedPickupLocation = simPickupRes.location;
     }
 
     if (couriersList.length === 0) {
@@ -4056,13 +4706,12 @@ app.post('/api/shiprocket/order/priority-book', async (req, res) => {
     if (isLiveConfigured()) {
       try {
         const headers = await getShiprocketAuthHeaders();
-        let pickupLocation = pickupDetails.pickupLocation || 'dapperss';
 
         const isPrepaid = orderToBook.paymentMethod && orderToBook.paymentMethod.toUpperCase() === 'PREPAID';
         const orderPayload = {
           order_id: `DF-${orderToBook.orderNumber}-${Date.now()}`,
           order_date: orderToBook.date,
-          pickup_location: pickupLocation,
+          pickup_location: resolvedPickupLocation.name,
           billing_customer_name: orderToBook.customerName.length >= 3 ? orderToBook.customerName : `${orderToBook.customerName} Customer`,
           billing_last_name: orderToBook.customerName.split(' ').slice(1).join(' ') || '',
           billing_address: orderToBook.address.address.length >= 10 ? orderToBook.address.address : `${orderToBook.address.address} Main Road`,
@@ -4131,7 +4780,7 @@ app.post('/api/shiprocket/order/priority-book', async (req, res) => {
               lastAwbError = awbData?.response?.data?.awb_assign_error || awbData?.message || awbData?.response?.data?.message || 'Empty AWB code returned.';
               console.log(`[Shiprocket] Courier ${candidate.courierId} failed AWB: ${lastAwbError}. Moving to next fallback...`);
             }
-          } catch (awbErr) {
+          } catch (awbErr: any) {
             lastAwbError = awbErr.message || String(awbErr);
             console.log(`[Shiprocket] Courier ${candidate.courierId} failed AWB: ${lastAwbError}. Moving to next fallback...`);
           }
@@ -4177,25 +4826,27 @@ app.post('/api/shiprocket/order/priority-book', async (req, res) => {
           });
         }
 
-        // Attempt label generation from official Shiprocket API without cancelling successfully booked shipment if delayed
-        try {
-          const labelData = await shiprocket.rawRequest('/courier/generate/label', 'POST', headers, { shipment_id: [Number(shipmentId) || shipmentId] });
-          const rawLabelUrl = labelData?.label_url || labelData?.response?.label_url || labelData?.url || labelData?.pdf_url || '';
-          if (rawLabelUrl) {
-            labelUrl = `/api/shiprocket/download-live-pdf?url=${encodeURIComponent(rawLabelUrl)}&filename=Label_${orderToBook.orderNumber || shipmentId}.pdf`;
-            console.log(`[Shiprocket] Official label generated successfully during priority booking: ${rawLabelUrl}`);
-            labelGenerated = true;
-          } else {
-            labelUrl = `/api/shiprocket/download-label-pdf?shipmentId=${encodeURIComponent(shipmentId)}`;
-            labelGenerated = true;
-          }
-        } catch (labelErr: any) {
-          console.log(`[Shiprocket] Live label generation API deferred: ${labelErr.message || labelErr}. Custom high-fidelity thermal label available.`);
-          labelUrl = `/api/shiprocket/download-label-pdf?shipmentId=${encodeURIComponent(shipmentId)}`;
+        // Issue 2: Attempt label generation from official Shiprocket API with retry mechanism
+        // Do NOT cancel the order if label generation is delayed!
+        const labelResult = await generateOrFetchShiprocketLabel(
+          headers,
+          shipmentId,
+          orderToBook.orderNumber || orderToBook.id,
+          3,
+          1500
+        );
+
+        if (labelResult.success && labelResult.labelUrl) {
+          labelUrl = labelResult.labelUrl;
           labelGenerated = true;
+          console.log(`[Shiprocket] Official label generated successfully during priority booking: ${labelUrl}`);
+        } else {
+          console.log(`[Shiprocket] Priority booking label deferred: ${labelResult.error}. Preserving booked order.`);
+          labelUrl = orderToBook.labelUrl || '';
+          labelGenerated = !!labelUrl;
         }
 
-      } catch (liveErr) {
+      } catch (liveErr: any) {
         console.error('[Shiprocket Priority Booking] Live flow encountered error:', liveErr.message || liveErr);
         orderToBook.status = 'failed';
         orderToBook.errorMessage = `Live booking failed: ${liveErr.message || liveErr}`;
@@ -4231,13 +4882,15 @@ app.post('/api/shiprocket/order/priority-book', async (req, res) => {
     orderToBook.awbCode = String(awbCode);
     orderToBook.courierName = assignedCourierName;
     orderToBook.assignedEmployeeId = assignedEmployeeId || orderToBook.assignedEmployeeId;
+    orderToBook.pickupLocation = resolvedPickupLocation.name;
+    orderToBook.pickupAddress = resolvedPickupLocation;
     orderToBook.labelUrl = labelGenerated ? labelUrl : undefined;
     orderToBook.trackingHistory = [
       { 
         date: new Date().toISOString().replace('T', ' ').slice(0, 16), 
         status: 'Booked', 
-        location: 'Pune Warehouse (MH)', 
-        activity: `Shipment booked via priority match: ${assignedCourierName}. Shiprocket ID: ${shiprocketId}.${labelGenerated ? ' Shipping label generated.' : ' Label pending.'}` 
+        location: `${resolvedPickupLocation.name} (${resolvedPickupLocation.city || 'Shiprocket'})`, 
+        activity: `Shipment booked via priority match: ${assignedCourierName}. AWB: ${awbCode}.${labelGenerated ? ' Shipping label generated.' : ' Label pending.'}` 
       }
     ];
 
@@ -4251,11 +4904,13 @@ app.post('/api/shiprocket/order/priority-book', async (req, res) => {
       shipmentId: String(shipmentId),
       awbCode: String(awbCode),
       courierName: assignedCourierName,
+      pickupLocation: resolvedPickupLocation.name,
       rate: bookedRate,
       labelUrl: orderToBook.labelUrl,
-      labelGenerated
+      labelGenerated,
+      labelPending: !labelGenerated
     });
-  } catch (err) {
+  } catch (err: any) {
     const liveErrMsg = err.message || 'Priority booking failed on Shiprocket.';
     console.error('[Shiprocket] Priority live booking failed:', liveErrMsg);
     orderToBook.status = 'failed';
@@ -4399,11 +5054,13 @@ app.post('/api/shiprocket/label', async (req, res) => {
     String(o.orderNumber) === shipmentId
   );
 
+  const orderIdentifier = matchingOrder?.orderNumber || matchingOrder?.id || shipmentId;
+
   // 1. If matching order already has an official Shiprocket label URL, return it immediately
   if (matchingOrder?.labelUrl && (matchingOrder.labelUrl.includes('sr-core-cdn') || matchingOrder.labelUrl.includes('download-live-pdf'))) {
     let finalUrl = matchingOrder.labelUrl;
     if (!finalUrl.includes('/api/shiprocket/download-live-pdf')) {
-      finalUrl = `/api/shiprocket/download-live-pdf?url=${encodeURIComponent(finalUrl)}&filename=Label_${matchingOrder.orderNumber || shipmentId}.pdf`;
+      finalUrl = `/api/shiprocket/download-live-pdf?url=${encodeURIComponent(finalUrl)}&filename=${encodeURIComponent(`Dappersfit-Label-${orderIdentifier}.pdf`)}`;
     }
     return res.json({ success: true, labelUrl: finalUrl, labelGenerated: true });
   }
@@ -4427,18 +5084,13 @@ app.post('/api/shiprocket/label', async (req, res) => {
       }
 
       if (!isNaN(targetShipmentId) && targetShipmentId > 1000) {
-        const payload = { shipment_id: [targetShipmentId] };
-        const data = await shiprocket.rawRequest('/courier/generate/label', 'POST', headers, payload);
-        
-        const labelUrl = data?.label_url || data?.response?.label_url || data?.url || data?.pdf_url;
-        if (labelUrl) {
-          // Proxy through our backend to bypass browser-level cross-origin iframe blocks
-          const url = `/api/shiprocket/download-live-pdf?url=${encodeURIComponent(labelUrl)}&filename=Label_${matchingOrder?.orderNumber || shipmentId}.pdf`;
+        const labelResult = await generateOrFetchShiprocketLabel(headers, targetShipmentId, orderIdentifier, 3, 1500);
+        if (labelResult.success && labelResult.labelUrl) {
           if (matchingOrder) {
-            matchingOrder.labelUrl = url;
+            matchingOrder.labelUrl = labelResult.labelUrl;
             await saveSingleOrderToDb(matchingOrder);
           }
-          return res.json({ success: true, labelUrl: url, labelGenerated: true });
+          return res.json({ success: true, labelUrl: labelResult.labelUrl, labelGenerated: true });
         }
       }
 
@@ -4459,7 +5111,7 @@ app.post('/api/shiprocket/label', async (req, res) => {
 
   res.json({
     success: true,
-    labelUrl: `/api/shiprocket/download-label-pdf?shipmentId=${encodeURIComponent(shipmentId)}`,
+    labelUrl: `/api/shiprocket/download-label-pdf?shipmentId=${encodeURIComponent(shipmentId)}&filename=${encodeURIComponent(`Dappersfit-Label-${orderIdentifier}.pdf`)}`,
     labelGenerated: true
   });
 });
@@ -4999,6 +5651,11 @@ app.post('/api/logout', (req, res) => {
 // Serve public static assets
 app.use('/public', express.static(path.join(process.cwd(), 'public')));
 app.use('/uploads', express.static(path.join(process.cwd(), 'public', 'uploads')));
+
+// PWA: Serve manifest.json, sw.js, icon.jpg, and .well-known/assetlinks.json from root
+// dotfiles: 'allow' is required to serve /.well-known/assetlinks.json (TWA domain verification)
+app.use(express.static(path.join(process.cwd(), 'public'), { dotfiles: 'allow' }));
+app.use(express.static(path.join(process.cwd(), 'dist'), { dotfiles: 'allow' }));
 
 // Dedicated vanilla JavaScript courier booking page
 app.get('/courier-booking', (req, res) => {

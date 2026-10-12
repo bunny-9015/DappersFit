@@ -18,7 +18,8 @@ interface ServiceabilityModalProps {
     courier: CourierServiceability, 
     deliveryAddress?: any, 
     pickupLocationName?: string, 
-    pickupPostcode?: string
+    pickupPostcode?: string,
+    pickupAddress?: any
   ) => Promise<void> | void;
   walletBalance?: number;
   walletSimulated?: boolean;
@@ -98,12 +99,23 @@ export default function ServiceabilityModal({
   const [selectedPickupName, setSelectedPickupName] = useState<string>('Dapers');
   const [loadingPickups, setLoadingPickups] = useState<boolean>(true);
   const [pickupError, setPickupError] = useState<string | null>(null);
+  const [isCustomPickup, setIsCustomPickup] = useState<boolean>(false);
+  const [customPickup, setCustomPickup] = useState<PickupLocation>({
+    name: "Ashok og",
+    pincode: '400001',
+    address: 'Shop no.201 ground floor Sahara Market Mumbai S.s Musafir khana road',
+    city: 'Mumbai',
+    state: 'Maharashtra',
+    phone: '9561047759'
+  });
 
   const [couriers, setCouriers] = useState<CourierServiceability[]>([]);
   const [loadingCouriers, setLoadingCouriers] = useState<boolean>(false);
   const [courierError, setCourierError] = useState<string | null>(null);
 
-  const activePickupAddress = pickupLocations.find(l => l.name === selectedPickupName) || pickupLocations[0];
+  const activePickupAddress = isCustomPickup 
+    ? customPickup 
+    : (pickupLocations.find(l => l.name === selectedPickupName) || pickupLocations[0]);
 
   // Load pickup addresses on mount
   useEffect(() => {
@@ -113,23 +125,33 @@ export default function ServiceabilityModal({
       const res = await ShiprocketService.fetchPickupAddresses();
       if (res.success && res.addresses.length > 0) {
         setPickupLocations(res.addresses);
-        // Find if 'Dapers' (case-insensitive or exact match) is available in retrieved locations
-        const dapersLoc = res.addresses.find(
-          (addr: any) => addr.name.toLowerCase() === 'dapers' || addr.name.toLowerCase().includes('daper')
-        );
-        if (dapersLoc) {
-          setSelectedPickupName(dapersLoc.name);
-        } else {
-          // Default to the first location if 'Dapers' is not present
-          setSelectedPickupName(res.addresses[0].name);
+        
+        let initialName = '';
+        // If order already had a pickup location selected, honor it first
+        if (order.pickupLocation) {
+          const matchExisting = res.addresses.find(
+            (addr: any) => addr.name.toLowerCase().trim() === (order.pickupLocation || '').toLowerCase().trim() ||
+                           addr.name.toLowerCase().includes((order.pickupLocation || '').toLowerCase().trim())
+          );
+          if (matchExisting) initialName = matchExisting.name;
         }
+
+        if (!initialName) {
+          // Find if 'Dapers' (case-insensitive or exact match) is available in retrieved locations
+          const dapersLoc = res.addresses.find(
+            (addr: any) => addr.name.toLowerCase() === 'dapers' || addr.name.toLowerCase().includes('daper')
+          );
+          initialName = dapersLoc ? dapersLoc.name : res.addresses[0].name;
+        }
+
+        setSelectedPickupName(initialName);
       } else {
         setPickupError(res.error || 'Failed to fetch registered Shiprocket pickup addresses.');
       }
       setLoadingPickups(false);
     }
     loadPickupAddresses();
-  }, []);
+  }, [order.pickupLocation]);
 
   // Re-fetch serviceability whenever delivery pincode or active pickup pincode changes
   useEffect(() => {
@@ -287,52 +309,170 @@ export default function ServiceabilityModal({
                 </div>
               </div>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                {pickupLocations.map((loc) => {
-                  const isSelected = selectedPickupName === loc.name;
-                  const isDapers = loc.name.toLowerCase() === 'dapers' || loc.name.toLowerCase().includes('daper');
-                  return (
-                    <button
-                      key={loc.name}
-                      onClick={() => setSelectedPickupName(loc.name)}
-                      id={`pickup-loc-btn-${loc.name.replace(/\s+/g, '-').toLowerCase()}`}
-                      className={`text-left p-4 rounded-xl border transition-all flex flex-col justify-between h-full relative ${
-                        isSelected 
-                          ? 'border-amber-500 bg-amber-950/20 shadow-md ring-1 ring-amber-500/20' 
-                          : 'border-slate-700 bg-slate-900/30 hover:border-slate-600 hover:bg-slate-900/50'
-                      }`}
-                    >
-                      {isSelected && (
-                        <span className="absolute top-3 right-3 w-4 h-4 rounded-full bg-amber-500 flex items-center justify-center">
-                          <Check className="w-2.5 h-2.5 text-slate-950 stroke-[3]" />
+              <div className="space-y-3">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  {pickupLocations.map((loc) => {
+                    const isSelected = !isCustomPickup && selectedPickupName === loc.name;
+                    const isDapers = loc.name.toLowerCase() === 'dapers' || loc.name.toLowerCase().includes('daper');
+                    const isAshok = loc.name.toLowerCase().includes('ashok');
+                    return (
+                      <button
+                        key={loc.name}
+                        onClick={() => {
+                          setIsCustomPickup(false);
+                          setSelectedPickupName(loc.name);
+                        }}
+                        id={`pickup-loc-btn-${loc.name.replace(/\s+/g, '-').toLowerCase()}`}
+                        className={`text-left p-4 rounded-xl border transition-all flex flex-col justify-between h-full relative ${
+                          isSelected 
+                            ? 'border-amber-500 bg-amber-950/20 shadow-md ring-1 ring-amber-500/20' 
+                            : 'border-slate-700 bg-slate-900/30 hover:border-slate-600 hover:bg-slate-900/50'
+                        }`}
+                      >
+                        {isSelected && (
+                          <span className="absolute top-3 right-3 w-4 h-4 rounded-full bg-amber-500 flex items-center justify-center">
+                            <Check className="w-2.5 h-2.5 text-slate-950 stroke-[3]" />
+                          </span>
+                        )}
+                        <div className="space-y-1.5">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="font-sans font-bold text-slate-200 text-sm">{loc.name}</span>
+                            {isAshok && (
+                              <span className="text-[9px] bg-amber-500/20 border border-amber-500/30 text-amber-400 font-bold px-1.5 py-0.2 rounded">
+                                ASHOK
+                              </span>
+                            )}
+                            {isDapers && (
+                              <span className="text-[9px] bg-sky-500/20 border border-sky-500/30 text-sky-400 font-bold px-1.5 py-0.2 rounded">
+                                DEFAULT
+                              </span>
+                            )}
+                            {loc.isLive && (
+                              <span className="text-[9px] bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 font-bold px-1.5 py-0.2 rounded">
+                                LIVE
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-xs font-mono text-amber-500/90 font-bold">PIN: {loc.pincode}</p>
+                          <p className="text-xs font-sans text-slate-400 leading-relaxed line-clamp-3">{loc.address}</p>
+                          <p className="text-xs font-sans font-medium text-slate-300">{loc.city}, {loc.state}</p>
+                        </div>
+                        {loc.phone && (
+                          <div className="mt-3 pt-2 border-t border-slate-700/60 text-[10px] font-mono text-slate-400 flex items-center gap-1">
+                            <Phone className="w-3 h-3 text-slate-500" /> {loc.phone}
+                          </div>
+                        )}
+                      </button>
+                    );
+                  })}
+
+                  {/* Option for Custom Manual Pickup Address Override */}
+                  <button
+                    onClick={() => setIsCustomPickup(true)}
+                    id="pickup-loc-btn-custom-override"
+                    className={`text-left p-4 rounded-xl border transition-all flex flex-col justify-between h-full relative ${
+                      isCustomPickup 
+                        ? 'border-amber-500 bg-amber-950/20 shadow-md ring-1 ring-amber-500/20' 
+                        : 'border-dashed border-slate-650 bg-slate-900/20 hover:border-slate-500 hover:bg-slate-900/40'
+                    }`}
+                  >
+                    {isCustomPickup && (
+                      <span className="absolute top-3 right-3 w-4 h-4 rounded-full bg-amber-500 flex items-center justify-center">
+                        <Check className="w-2.5 h-2.5 text-slate-950 stroke-[3]" />
+                      </span>
+                    )}
+                    <div className="space-y-1.5">
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-sans font-bold text-amber-300 text-sm">✍️ Custom / Manual Address</span>
+                        <span className="text-[9px] bg-amber-500/20 border border-amber-500/30 text-amber-400 font-bold px-1.5 py-0.2 rounded">
+                          OVERRIDE
                         </span>
-                      )}
-                      <div className="space-y-1.5">
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          <span className="font-sans font-bold text-slate-200 text-sm">{loc.name}</span>
-                          {isDapers && (
-                            <span className="text-[9px] bg-sky-500/20 border border-sky-500/30 text-sky-400 font-bold px-1.5 py-0.2 rounded">
-                              DEFAULT
-                            </span>
-                          )}
-                          {loc.isLive && (
-                            <span className="text-[9px] bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 font-bold px-1.5 py-0.2 rounded">
-                              LIVE
-                            </span>
-                          )}
-                        </div>
-                        <p className="text-xs font-mono text-amber-500/90 font-bold">PIN: {loc.pincode}</p>
-                        <p className="text-xs font-sans text-slate-400 leading-relaxed line-clamp-3">{loc.address}</p>
-                        <p className="text-xs font-sans font-medium text-slate-300">{loc.city}, {loc.state}</p>
                       </div>
-                      {loc.phone && (
-                        <div className="mt-3 pt-2 border-t border-slate-700/60 text-[10px] font-mono text-slate-400 flex items-center gap-1">
-                          <Phone className="w-3 h-3 text-slate-500" /> {loc.phone}
+                      <p className="text-xs font-mono text-amber-400 font-bold">PIN: {customPickup.pincode}</p>
+                      <p className="text-xs font-sans text-slate-300 leading-relaxed line-clamp-2">{customPickup.address}</p>
+                      <p className="text-xs font-sans text-slate-400">{customPickup.city}, {customPickup.state}</p>
+                    </div>
+                    <div className="mt-3 pt-2 border-t border-slate-700/60 text-[10px] text-amber-400/90 font-sans font-semibold">
+                      Click to edit custom pickup fields
+                    </div>
+                  </button>
+                </div>
+
+                {/* Custom Pickup Address Input Editor when active */}
+                {isCustomPickup && (
+                  <div className="p-4 bg-slate-900/80 border border-amber-500/40 rounded-xl space-y-3 animate-in fade-in duration-150" id="custom-pickup-editor">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-amber-300 uppercase tracking-wide">Configure Custom Pickup Address</span>
+                      <span className="text-[10px] text-slate-400 font-mono">Will be dispatched from this custom location</span>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
+                      <div>
+                        <label className="text-[10px] text-slate-400 block font-semibold uppercase mb-1">Pickup Nickname *</label>
+                        <input
+                          type="text"
+                          value={customPickup.name}
+                          onChange={(e) => setCustomPickup({ ...customPickup, name: e.target.value })}
+                          placeholder="E.g. Ashok og / Ashok's Address"
+                          className="w-full p-2 bg-slate-800 border border-slate-700 rounded-lg text-white font-mono text-xs outline-none focus:border-amber-400"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] text-slate-400 block font-semibold uppercase mb-1">Pickup Pincode *</label>
+                        <input
+                          type="text"
+                          value={customPickup.pincode}
+                          onChange={(e) => setCustomPickup({ ...customPickup, pincode: e.target.value })}
+                          placeholder="E.g. 400001"
+                          className="w-full p-2 bg-slate-800 border border-slate-700 rounded-lg text-white font-mono text-xs outline-none focus:border-amber-400"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] text-slate-400 block font-semibold uppercase mb-1">Phone Number</label>
+                        <input
+                          type="text"
+                          value={customPickup.phone || ''}
+                          onChange={(e) => setCustomPickup({ ...customPickup, phone: e.target.value })}
+                          placeholder="E.g. 9561047759"
+                          className="w-full p-2 bg-slate-800 border border-slate-700 rounded-lg text-white font-mono text-xs outline-none focus:border-amber-400"
+                        />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
+                      <div className="md:col-span-2">
+                        <label className="text-[10px] text-slate-400 block font-semibold uppercase mb-1">Street Address</label>
+                        <input
+                          type="text"
+                          value={customPickup.address}
+                          onChange={(e) => setCustomPickup({ ...customPickup, address: e.target.value })}
+                          placeholder="Shop no.201 ground floor Sahara Market..."
+                          className="w-full p-2 bg-slate-800 border border-slate-700 rounded-lg text-white text-xs outline-none focus:border-amber-400"
+                        />
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="text-[10px] text-slate-400 block font-semibold uppercase mb-1">City</label>
+                          <input
+                            type="text"
+                            value={customPickup.city}
+                            onChange={(e) => setCustomPickup({ ...customPickup, city: e.target.value })}
+                            placeholder="Mumbai"
+                            className="w-full p-2 bg-slate-800 border border-slate-700 rounded-lg text-white text-xs outline-none focus:border-amber-400"
+                          />
                         </div>
-                      )}
-                    </button>
-                  );
-                })}
+                        <div>
+                          <label className="text-[10px] text-slate-400 block font-semibold uppercase mb-1">State</label>
+                          <input
+                            type="text"
+                            value={customPickup.state}
+                            onChange={(e) => setCustomPickup({ ...customPickup, state: e.target.value })}
+                            placeholder="Maharashtra"
+                            className="w-full p-2 bg-slate-800 border border-slate-700 rounded-lg text-white text-xs outline-none focus:border-amber-400"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -407,7 +547,8 @@ export default function ServiceabilityModal({
                                 courier, 
                                 activeDeliveryAddress, 
                                 activePickupAddress?.name, 
-                                activePickupAddress?.pincode
+                                activePickupAddress?.pincode,
+                                activePickupAddress
                               );
                             } finally {
                               setIsBooking(false);
