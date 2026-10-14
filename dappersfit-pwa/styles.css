@@ -1,0 +1,1410 @@
+/* ==========================================================================
+   Dappersfit Logistics PWA - iPhone Native Luxury Style System
+   Specifically optimized for Apple iOS Safari WebKit & Standalone PWA Mode
+   ========================================================================== */
+
+:root {
+  /* Core Luxury Canvas & Surfaces */
+  --canvas: #FAF9F6;
+  --surface: #FFFFFF;
+  --surface-low: #F4F3F0;
+  --surface-container: #EFEEEB;
+  --surface-high: #E9E8E5;
+  --surface-highest: #E3E2DF;
+  --hairline-border: #EEEDE9;
+  --border-strong: #E2E0D8;
+
+  /* Typography & Ink */
+  --primary-ink: #1C1B1A;
+  --body-slate: #4B5563;
+  --meta-gray: #9CA3AF;
+  --text-muted: #8E8B85;
+
+  /* Executive Gold Accent */
+  --executive-gold: #B8862F;
+  --executive-gold-dark: #A07324;
+  --executive-gold-light: #FFDDAE;
+  --executive-gold-container: #9A6C14;
+  --executive-gold-glow: rgba(184, 134, 47, 0.18);
+
+  /* Status Badges */
+  --status-pending-bg: #FEF3C7;
+  --status-pending-text: #92400E;
+  --status-processing-bg: #EFF6FF;
+  --status-processing-text: #1E40AF;
+  --status-booked-bg: #F5F3FF;
+  --status-booked-text: #5B21B6;
+  --status-shipped-bg: #ECFEFF;
+  --status-shipped-text: #155E75;
+  --status-delivered-bg: #ECFDF5;
+  --status-delivered-text: #065F46;
+  --status-cancelled-bg: #FEF2F2;
+  --status-cancelled-text: #991B1B;
+  --status-review-bg: #FFF7ED;
+  --status-review-text: #9A3412;
+
+  /* iOS Metrics */
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+  --header-height: 60px;
+  --bottom-nav-height: 66px;
+  --radius-sm: 8px;
+  --radius-md: 14px;
+  --radius-lg: 20px;
+  --radius-pill: 9999px;
+  --shadow-subtle: 0 1px 4px rgba(0, 0, 0, 0.04);
+  --shadow-card: 0 2px 10px rgba(0, 0, 0, 0.05);
+  --shadow-sheet: 0 -8px 30px rgba(0, 0, 0, 0.12);
+  --shadow-gold: 0 4px 14px rgba(184, 134, 47, 0.28);
+}
+
+/* ==========================================================================
+   RESET & iPHONE WEBKIT OPTIMIZATIONS (Eliminates Mistouch & Lag)
+   ========================================================================== */
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  /* Eliminate the grey rectangular tap flash on iOS WebKit */
+  -webkit-tap-highlight-color: transparent;
+}
+
+html, body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background-color: var(--canvas);
+  color: var(--primary-ink);
+  font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Roboto, sans-serif;
+  font-size: 14px;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  /* Prevent the notorious iOS Safari whole-page elastic rubber-band pull */
+  overscroll-behavior: none;
+  /* Prevent horizontal pan jumps */
+  touch-action: pan-y;
+}
+
+/* Prevent accidental text selection during fast swiping, except for copyable fields */
+body, button, input, select, textarea, .nav-item, .header-bar, .metric-card, .filter-chip {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+/* Allow text copy on order numbers, phone numbers, AWBs and addresses */
+.selectable, .order-id, .awb-code, .phone-num, .address-text, input, textarea {
+  -webkit-user-select: text !important;
+  user-select: text !important;
+  -webkit-touch-callout: default !important;
+}
+
+/* Immediate touch responses without 300ms delay */
+button, a, .clickable, .filter-chip, .tab-btn {
+  touch-action: manipulation;
+  cursor: pointer;
+}
+
+/* Hide scrollbars for clean native iOS app feel while retaining momentum scroll */
+::-webkit-scrollbar {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+}
+
+/* Monospace font utility for code and numbers */
+.font-mono {
+  font-family: 'JetBrains Mono', 'SF Mono', Menlo, Consolas, monospace;
+}
+
+/* ==========================================================================
+   APP SHELL LAYOUT (iOS Notch & Dynamic Island Integration)
+   ========================================================================== */
+#app-root {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  max-width: 500px;
+  margin: 0 auto;
+  position: relative;
+  background-color: var(--canvas);
+  overflow: hidden;
+  box-shadow: 0 0 40px rgba(0, 0, 0, 0.06);
+}
+
+/* Fixed Top Header */
+.app-header {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  max-width: 500px;
+  margin: 0 auto;
+  z-index: 100;
+  padding-top: var(--safe-top);
+  background: rgba(250, 249, 246, 0.88);
+  -webkit-backdrop-filter: blur(20px);
+  backdrop-filter: blur(20px);
+  border-bottom: 1px solid var(--hairline-border);
+  transition: transform 0.25s ease;
+}
+
+.header-content {
+  height: var(--header-height);
+  padding: 0 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.header-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.brand-icon-box {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  background: var(--primary-ink);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+}
+
+.brand-icon-box img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.brand-text {
+  display: flex;
+  flex-direction: column;
+}
+
+.brand-subtitle {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--meta-gray);
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+}
+
+.brand-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--primary-ink);
+  letter-spacing: -0.3px;
+  max-width: 180px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.header-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  border: 1px solid var(--hairline-border);
+  color: var(--body-slate);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  transition: transform 0.15s ease, background 0.15s ease;
+}
+
+.header-btn:active {
+  transform: scale(0.92);
+  background: var(--surface-low);
+}
+
+.avatar-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-pill);
+  border: 1.5px solid var(--executive-gold);
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--surface-container);
+  padding: 0;
+}
+
+.avatar-btn img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.badge-dot {
+  position: absolute;
+  top: 7px;
+  right: 7px;
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-pill);
+  background: var(--executive-gold);
+}
+
+/* ==========================================================================
+   VIEW CONTAINERS & NATIVE SCROLL
+   ========================================================================== */
+.view-viewport {
+  flex: 1;
+  width: 100%;
+  height: 100%;
+  position: relative;
+  overflow: hidden;
+  padding-top: calc(var(--header-height) + var(--safe-top));
+  padding-bottom: calc(var(--bottom-nav-height) + var(--safe-bottom));
+}
+
+.view-page {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 14px 16px 30px 16px;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transform: translateY(6px);
+  transition: opacity 0.2s cubic-bezier(0.16, 1, 0.3, 1), transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.view-page.active {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transform: translateY(0);
+}
+
+/* Fullscreen special pages (e.g., Login) */
+.fullscreen-page {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 200;
+  background: var(--canvas);
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: calc(var(--safe-top) + 24px) 24px calc(var(--safe-bottom) + 24px) 24px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  transition: opacity 0.3s ease, transform 0.3s ease;
+}
+
+.fullscreen-page.hidden {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transform: scale(0.97);
+}
+
+/* ==========================================================================
+   BOTTOM NAVIGATION BAR (iOS Native Style)
+   ========================================================================== */
+.bottom-nav {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  max-width: 500px;
+  margin: 0 auto;
+  z-index: 100;
+  height: calc(var(--bottom-nav-height) + var(--safe-bottom));
+  padding-bottom: var(--safe-bottom);
+  background: rgba(255, 255, 255, 0.92);
+  -webkit-backdrop-filter: blur(25px);
+  backdrop-filter: blur(25px);
+  border-top: 1px solid var(--hairline-border);
+  display: flex;
+  align-items: center;
+  justify-content: space-around;
+  box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.03);
+}
+
+.nav-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  height: 100%;
+  color: var(--meta-gray);
+  text-decoration: none;
+  background: transparent;
+  border: none;
+  transition: color 0.15s ease;
+  position: relative;
+}
+
+.nav-item .nav-icon {
+  font-size: 24px;
+  transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.nav-item .nav-label {
+  font-size: 11px;
+  font-weight: 500;
+  margin-top: 2px;
+  letter-spacing: -0.2px;
+}
+
+.nav-item.active {
+  color: var(--executive-gold);
+}
+
+.nav-item.active .nav-icon {
+  transform: translateY(-2px);
+  font-variation-settings: 'FILL' 1;
+}
+
+.nav-item.active .nav-label {
+  font-weight: 700;
+}
+
+.nav-item:active {
+  transform: scale(0.92);
+}
+
+/* ==========================================================================
+   LIVE FEED STATUS STRIP & REFRESH BAR
+   ========================================================================== */
+.live-status-bar {
+  background: rgba(255, 255, 255, 0.95);
+  border: 1px solid var(--hairline-border);
+  border-radius: var(--radius-pill);
+  padding: 8px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+  box-shadow: var(--shadow-subtle);
+}
+
+.live-indicator {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.pulse-dot {
+  position: relative;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--executive-gold);
+}
+
+.pulse-dot::after {
+  content: '';
+  position: absolute;
+  top: -3px;
+  left: -3px;
+  right: -3px;
+  bottom: -3px;
+  border-radius: 50%;
+  background: var(--executive-gold-light);
+  animation: pulse-ring 2s infinite ease-out;
+  opacity: 0.75;
+}
+
+@keyframes pulse-ring {
+  0% { transform: scale(0.6); opacity: 0.9; }
+  100% { transform: scale(2.2); opacity: 0; }
+}
+
+.live-text {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--body-slate);
+}
+
+.live-meta {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--executive-gold);
+}
+
+/* ==========================================================================
+   BALANCED KPI MATRIX (2x2 Balanced Cards)
+   ========================================================================== */
+.kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.kpi-card {
+  background: var(--surface);
+  border: 1px solid var(--hairline-border);
+  border-radius: var(--radius-md);
+  padding: 13px 14px;
+  box-shadow: var(--shadow-subtle);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  min-height: 98px;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.kpi-card:active {
+  transform: scale(0.98);
+}
+
+.kpi-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.kpi-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--meta-gray);
+  letter-spacing: 0.2px;
+}
+
+.kpi-icon-wrap {
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  background: var(--surface-low);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--body-slate);
+}
+
+.kpi-icon-wrap .material-symbols-outlined {
+  font-size: 16px;
+}
+
+.kpi-value {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--primary-ink);
+  letter-spacing: -0.5px;
+  line-height: 1.1;
+  margin-bottom: 6px;
+}
+
+.kpi-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 7px;
+  border-radius: var(--radius-pill);
+  font-size: 10px;
+  font-weight: 600;
+  width: fit-content;
+}
+
+.kpi-badge.gold {
+  background: var(--surface-container);
+  color: var(--executive-gold-dark);
+}
+
+.kpi-badge.pending {
+  background: var(--status-pending-bg);
+  color: var(--status-pending-text);
+}
+
+.kpi-badge.purple {
+  background: var(--status-booked-bg);
+  color: var(--status-booked-text);
+}
+
+.kpi-badge.green {
+  background: var(--status-delivered-bg);
+  color: var(--status-delivered-text);
+}
+
+/* ==========================================================================
+   PRIORITY DISPATCH CALLOUT BANNER
+   ========================================================================== */
+.priority-banner {
+  background: var(--surface-low);
+  border: 1px solid var(--hairline-border);
+  border-radius: var(--radius-md);
+  padding: 12px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.priority-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.priority-icon {
+  width: 38px;
+  height: 38px;
+  border-radius: var(--radius-sm);
+  background: var(--executive-gold-light);
+  color: var(--executive-gold-container);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.priority-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--primary-ink);
+}
+
+.priority-sub {
+  font-size: 11px;
+  color: var(--body-slate);
+}
+
+.priority-queue {
+  text-align: right;
+}
+
+.queue-label {
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--meta-gray);
+  letter-spacing: 0.5px;
+}
+
+.queue-count {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--executive-gold);
+}
+
+/* ==========================================================================
+   SECTION HEADERS & QUICK ACTIONS
+   ========================================================================== */
+.section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.section-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--primary-ink);
+  letter-spacing: -0.2px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.counter-chip {
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  font-size: 10px;
+  font-weight: 600;
+  background: var(--surface-container);
+  color: var(--body-slate);
+}
+
+.section-btn {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--executive-gold);
+  background: transparent;
+  border: none;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* ==========================================================================
+   FEED ITEMS & CARDS
+   ========================================================================== */
+.feed-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.feed-item {
+  background: var(--surface);
+  border: 1px solid var(--hairline-border);
+  border-radius: var(--radius-md);
+  padding: 12px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  box-shadow: var(--shadow-subtle);
+  transition: transform 0.15s ease;
+}
+
+.feed-item:active {
+  transform: scale(0.99);
+}
+
+.feed-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-pill);
+  background: var(--surface-low);
+  border: 1px solid var(--hairline-border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--executive-gold);
+  font-weight: 700;
+  font-size: 12px;
+  flex-shrink: 0;
+}
+
+.feed-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.feed-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--primary-ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.feed-subtitle {
+  font-size: 11px;
+  color: var(--meta-gray);
+  margin-top: 1px;
+}
+
+.feed-time {
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+/* ==========================================================================
+   ORDERS MANAGEMENT STYLES
+   ========================================================================== */
+.search-bar-wrap {
+  position: relative;
+  margin-bottom: 10px;
+}
+
+.search-input {
+  width: 100%;
+  height: 44px;
+  background: var(--surface);
+  border: 1px solid var(--hairline-border);
+  border-radius: var(--radius-md);
+  padding: 0 40px 0 38px;
+  font-size: 13px;
+  color: var(--primary-ink);
+  outline: none;
+  box-shadow: var(--shadow-subtle);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.search-input:focus {
+  border-color: var(--executive-gold);
+  box-shadow: 0 0 0 3px var(--executive-gold-glow);
+}
+
+.search-icon {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--meta-gray);
+  font-size: 20px;
+  pointer-events: none;
+}
+
+.search-clear-btn {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: none;
+  background: transparent;
+  color: var(--meta-gray);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Horizontal Filter Carousel */
+.filter-carousel {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 2px 0 10px 0;
+  -webkit-overflow-scrolling: touch;
+  white-space: nowrap;
+  margin-bottom: 6px;
+}
+
+.filter-pill {
+  padding: 6px 14px;
+  border-radius: var(--radius-pill);
+  font-size: 12px;
+  font-weight: 600;
+  border: 1px solid var(--hairline-border);
+  background: var(--surface);
+  color: var(--body-slate);
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  transition: all 0.15s ease;
+}
+
+.filter-pill.active {
+  background: var(--primary-ink);
+  color: #FFFFFF;
+  border-color: var(--primary-ink);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.filter-pill:active {
+  transform: scale(0.95);
+}
+
+.filter-pill .pill-count {
+  font-size: 10px;
+  opacity: 0.8;
+}
+
+/* Order Stack Cards */
+.order-card {
+  background: var(--surface);
+  border: 1px solid var(--hairline-border);
+  border-radius: var(--radius-lg);
+  padding: 14px 16px;
+  margin-bottom: 10px;
+  box-shadow: var(--shadow-subtle);
+  transition: transform 0.15s ease, border-color 0.15s ease;
+}
+
+.order-card:active {
+  transform: scale(0.99);
+  border-color: var(--border-strong);
+}
+
+.order-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--hairline-border);
+}
+
+.order-id-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.order-id {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--primary-ink);
+}
+
+.order-time {
+  font-size: 11px;
+  color: var(--meta-gray);
+}
+
+.status-badge {
+  padding: 3px 9px;
+  border-radius: var(--radius-pill);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: capitalize;
+}
+
+.status-badge.pending { background: var(--status-pending-bg); color: var(--status-pending-text); }
+.status-badge.processing { background: var(--status-processing-bg); color: var(--status-processing-text); }
+.status-badge.booked { background: var(--status-booked-bg); color: var(--status-booked-text); }
+.status-badge.shipped { background: var(--status-shipped-bg); color: var(--status-shipped-text); }
+.status-badge.delivered { background: var(--status-delivered-bg); color: var(--status-delivered-text); }
+.status-badge.cancelled { background: var(--status-cancelled-bg); color: var(--status-cancelled-text); }
+
+.order-body-row {
+  padding: 10px 0 6px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.order-customer-line {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.order-customer-name {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--primary-ink);
+}
+
+.order-price {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--primary-ink);
+}
+
+.order-address-line {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--body-slate);
+}
+
+.order-address-line .material-symbols-outlined {
+  font-size: 14px;
+  color: var(--meta-gray);
+}
+
+.order-items-box {
+  background: var(--surface-low);
+  border-radius: var(--radius-sm);
+  padding: 7px 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 6px;
+}
+
+.order-items-desc {
+  font-size: 11px;
+  color: var(--primary-ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+}
+
+.payment-chip {
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  background: var(--surface-container);
+  color: var(--body-slate);
+  margin-left: 8px;
+}
+
+.order-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.btn-priority-dispatch {
+  flex: 1;
+  height: 40px;
+  border-radius: var(--radius-md);
+  background: var(--primary-ink);
+  color: #FFFFFF;
+  border: none;
+  font-size: 12px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  box-shadow: 0 2px 8px rgba(28, 27, 26, 0.2);
+  transition: transform 0.15s ease, background 0.15s ease;
+}
+
+.btn-priority-dispatch:active {
+  transform: scale(0.97);
+  background: #000000;
+}
+
+.btn-card-secondary {
+  height: 40px;
+  padding: 0 14px;
+  border-radius: var(--radius-md);
+  background: var(--surface-low);
+  color: var(--primary-ink);
+  border: 1px solid var(--hairline-border);
+  font-size: 12px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+}
+
+.btn-card-secondary:active {
+  transform: scale(0.97);
+  background: var(--surface-container);
+}
+
+/* ==========================================================================
+   TICKETS & REPLACEMENTS STYLES
+   ========================================================================== */
+.stat-strip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 12px;
+  -webkit-overflow-scrolling: touch;
+  margin-bottom: 6px;
+}
+
+.mini-stat-card {
+  flex-shrink: 0;
+  width: 104px;
+  background: var(--surface);
+  border: 1px solid var(--hairline-border);
+  border-radius: var(--radius-md);
+  padding: 10px 12px;
+  box-shadow: var(--shadow-subtle);
+}
+
+.mini-stat-label {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--meta-gray);
+  white-space: nowrap;
+}
+
+.mini-stat-val {
+  font-size: 18px;
+  font-weight: 700;
+  margin-top: 3px;
+}
+
+.ticket-card {
+  background: var(--surface);
+  border: 1px solid var(--hairline-border);
+  border-radius: var(--radius-lg);
+  padding: 14px 16px;
+  margin-bottom: 10px;
+  box-shadow: var(--shadow-subtle);
+}
+
+.ticket-flag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.flag-red { background: var(--status-cancelled-bg); color: var(--status-cancelled-text); }
+.flag-orange { background: var(--status-review-bg); color: var(--status-review-text); }
+.flag-green { background: var(--status-delivered-bg); color: var(--status-delivered-text); }
+
+/* ==========================================================================
+   MORE MODULES HUB
+   ========================================================================== */
+.menu-group-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--meta-gray);
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  margin: 18px 0 8px 4px;
+}
+
+.menu-card {
+  background: var(--surface);
+  border: 1px solid var(--hairline-border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  box-shadow: var(--shadow-subtle);
+  margin-bottom: 12px;
+}
+
+.menu-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--hairline-border);
+  text-align: left;
+  transition: background 0.15s ease;
+}
+
+.menu-item:last-child {
+  border-bottom: none;
+}
+
+.menu-item:active {
+  background: var(--surface-low);
+}
+
+.menu-item-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.menu-icon-wrap {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: var(--surface-low);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--primary-ink);
+}
+
+.menu-icon-wrap.gold {
+  color: var(--executive-gold);
+  background: rgba(184, 134, 47, 0.1);
+}
+
+.menu-icon-wrap.danger {
+  color: var(--status-cancelled-text);
+  background: var(--status-cancelled-bg);
+}
+
+.menu-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--primary-ink);
+}
+
+.menu-sub {
+  font-size: 11px;
+  color: var(--meta-gray);
+  margin-top: 1px;
+}
+
+.menu-chevron {
+  color: var(--meta-gray);
+  font-size: 18px;
+}
+
+/* ==========================================================================
+   MODAL SHEETS & DIALOGS (Native iOS Spring Physics)
+   ========================================================================== */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.45);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  z-index: 150;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.25s ease, visibility 0.25s ease;
+}
+
+.modal-overlay.active {
+  opacity: 1;
+  visibility: visible;
+}
+
+.modal-sheet {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  max-width: 500px;
+  margin: 0 auto;
+  max-height: 90vh;
+  background: var(--canvas);
+  border-radius: 24px 24px 0 0;
+  padding: 16px 20px calc(var(--safe-bottom) + 20px) 20px;
+  z-index: 160;
+  box-shadow: var(--shadow-sheet);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  transform: translateY(100%);
+  transition: transform 0.35s cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.modal-sheet.active {
+  transform: translateY(0);
+}
+
+.sheet-handle {
+  width: 36px;
+  height: 5px;
+  border-radius: var(--radius-pill);
+  background: var(--surface-highest);
+  margin: 0 auto 14px auto;
+  flex-shrink: 0;
+}
+
+.sheet-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+  flex-shrink: 0;
+}
+
+.sheet-title {
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--primary-ink);
+}
+
+.sheet-close-btn {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: none;
+  background: var(--surface-container);
+  color: var(--body-slate);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.sheet-body {
+  flex: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: 10px;
+}
+
+/* ==========================================================================
+   FORM CONTROLS & LUXURY BUTTONS
+   ========================================================================== */
+.form-group {
+  margin-bottom: 14px;
+}
+
+.form-label {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--body-slate);
+  margin-bottom: 6px;
+}
+
+.form-control {
+  width: 100%;
+  height: 44px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--hairline-border);
+  background: var(--surface);
+  padding: 0 14px;
+  font-size: 14px;
+  color: var(--primary-ink);
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.form-control:focus {
+  border-color: var(--executive-gold);
+  box-shadow: 0 0 0 3px var(--executive-gold-glow);
+}
+
+.btn-gold-primary {
+  width: 100%;
+  height: 46px;
+  border-radius: var(--radius-md);
+  background: var(--executive-gold);
+  color: #FFFFFF;
+  border: none;
+  font-size: 14px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  box-shadow: var(--shadow-gold);
+  transition: transform 0.15s ease, background 0.15s ease;
+}
+
+.btn-gold-primary:active {
+  transform: scale(0.98);
+  background: var(--executive-gold-dark);
+}
+
+.btn-ink-primary {
+  width: 100%;
+  height: 46px;
+  border-radius: var(--radius-md);
+  background: var(--primary-ink);
+  color: #FFFFFF;
+  border: none;
+  font-size: 14px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  box-shadow: 0 4px 12px rgba(28, 27, 26, 0.2);
+  transition: transform 0.15s ease;
+}
+
+.btn-ink-primary:active {
+  transform: scale(0.98);
+  background: #000000;
+}
+
+/* ==========================================================================
+   SMART iOS "ADD TO HOME SCREEN" INSTALLATION BANNER
+   ========================================================================== */
+.ios-install-banner {
+  position: fixed;
+  bottom: calc(var(--bottom-nav-height) + var(--safe-bottom) + 12px);
+  left: 16px;
+  right: 16px;
+  max-width: 468px;
+  margin: 0 auto;
+  background: rgba(28, 27, 26, 0.94);
+  -webkit-backdrop-filter: blur(20px);
+  backdrop-filter: blur(20px);
+  color: #FFFFFF;
+  border-radius: var(--radius-lg);
+  padding: 14px 16px;
+  z-index: 120;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  transform: translateY(120%);
+  transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.ios-install-banner.visible {
+  transform: translateY(0);
+}
+
+.install-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background: var(--executive-gold);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.install-text {
+  flex: 1;
+}
+
+.install-title {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.install-desc {
+  font-size: 11px;
+  opacity: 0.8;
+  margin-top: 2px;
+}
+
+.install-dismiss {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(255, 255, 255, 0.15);
+  color: #FFFFFF;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* ==========================================================================
+   TOAST ALERTS
+   ========================================================================== */
+.toast-container {
+  position: fixed;
+  top: calc(var(--safe-top) + 12px);
+  left: 16px;
+  right: 16px;
+  max-width: 468px;
+  margin: 0 auto;
+  z-index: 250;
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.toast {
+  background: rgba(28, 27, 26, 0.96);
+  -webkit-backdrop-filter: blur(15px);
+  backdrop-filter: blur(15px);
+  color: #FFFFFF;
+  border-radius: var(--radius-md);
+  padding: 12px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  transform: translateY(-20px);
+  opacity: 0;
+  transition: transform 0.25s ease, opacity 0.25s ease;
+}
+
+.toast.show {
+  transform: translateY(0);
+  opacity: 1;
+}
+
+.toast.success .material-symbols-outlined { color: #10B981; }
+.toast.error .material-symbols-outlined { color: #EF4444; }
+.toast.info .material-symbols-outlined { color: var(--executive-gold); }

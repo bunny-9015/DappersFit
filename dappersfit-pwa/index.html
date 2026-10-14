@@ -1,0 +1,703 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Dappersfit Logistics</title>
+  <!-- iPhone iOS Viewport & PWA Lockdown (Disables Zoom & Rubberbanding) -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  
+  <!-- Apple WebKit Standalone PWA Optimization -->
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Dappersfit">
+  <meta name="format-detection" content="telephone=no">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="theme-color" content="#1C1B1A">
+
+  <!-- Icons -->
+  <link rel="manifest" href="./manifest.json">
+  <link rel="apple-touch-icon" sizes="180x180" href="./apple-touch-icon.png">
+  <link rel="icon" type="image/png" sizes="192x192" href="./icons/icon-192.png">
+
+  <!-- Typography & Google Material Symbols -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet">
+
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <div id="app-root">
+    
+    <!-- Toast & Notification Container -->
+    <div id="toast-container" class="toast-container"></div>
+
+    <!-- Smart iOS Add-to-Home-Screen Prompt -->
+    <div id="ios-install-banner" class="ios-install-banner">
+      <div class="install-icon">
+        <span class="material-symbols-outlined" style="color: #FFFFFF;">ios_share</span>
+      </div>
+      <div class="install-text">
+        <div class="install-title">Install on iPhone</div>
+        <div class="install-desc">Tap <strong>Share</strong> <span style="font-size:13px">􀈂</span> below, then <strong>Add to Home Screen</strong> <span style="font-size:13px">􀎶</span> for full-screen speed.</div>
+      </div>
+      <button id="btn-dismiss-install" class="install-dismiss" aria-label="Dismiss">
+        <span class="material-symbols-outlined" style="font-size: 16px;">close</span>
+      </button>
+    </div>
+
+    <!-- Fixed App Header -->
+    <header id="app-header" class="app-header">
+      <div class="header-content">
+        <div class="header-brand">
+          <div class="brand-icon-box">
+            <img src="./icons/app_icon.png" alt="DF" onerror="this.src='./icons/icon-192.png'">
+          </div>
+          <div class="brand-text">
+            <span class="brand-subtitle">Kinetic Logistics</span>
+            <span id="header-page-title" class="brand-title">Cockpit</span>
+          </div>
+        </div>
+        <div class="header-actions">
+          <button id="header-refresh-btn" class="header-btn" title="Sync live orders" aria-label="Refresh data">
+            <span class="material-symbols-outlined" style="font-size: 20px;">sync</span>
+          </button>
+          <button id="header-profile-btn" class="avatar-btn" title="Operator Profile" aria-label="Profile">
+            <img src="./icons/avatar.png" alt="Profile" onerror="this.src='./icons/app_icon.png'">
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <!-- Main Viewport containing Tab Pages -->
+    <main class="view-viewport">
+
+      <!-- TAB 1: FULFILLMENT COCKPIT -->
+      <section id="view-cockpit" class="view-page active">
+        <!-- Live status bar -->
+        <div class="live-status-bar">
+          <div class="live-indicator">
+            <span class="pulse-dot"></span>
+            <span id="cockpit-live-label" class="live-text">Pull to refresh • Live feed active</span>
+          </div>
+          <div class="live-meta">
+            <span id="cockpit-sync-percent" class="font-mono">99.8%</span>
+            <span class="material-symbols-outlined" style="font-size: 15px;">sync</span>
+          </div>
+        </div>
+
+        <!-- 2x2 Balanced KPI Matrix -->
+        <div class="kpi-grid">
+          <!-- Total Orders -->
+          <div class="kpi-card" id="card-total-orders">
+            <div class="kpi-top">
+              <span class="kpi-label">Total Orders</span>
+              <div class="kpi-icon-wrap">
+                <span class="material-symbols-outlined">inventory_2</span>
+              </div>
+            </div>
+            <div>
+              <div id="stat-total-orders" class="kpi-value font-mono">--</div>
+              <div class="kpi-badge gold">
+                <span class="material-symbols-outlined" style="font-size: 12px;">trending_up</span>
+                <span id="stat-today-change">+12% today</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Pending Dispatch -->
+          <div class="kpi-card" id="card-pending-orders">
+            <div class="kpi-top">
+              <span class="kpi-label">Pending Dispatch</span>
+              <div class="kpi-icon-wrap">
+                <span class="material-symbols-outlined">pending_actions</span>
+              </div>
+            </div>
+            <div>
+              <div id="stat-pending-orders" class="kpi-value font-mono">--</div>
+              <div class="kpi-badge pending">
+                <span>Requires action</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Booked Priority -->
+          <div class="kpi-card" id="card-booked-orders">
+            <div class="kpi-top">
+              <span class="kpi-label">Booked Priority</span>
+              <div class="kpi-icon-wrap">
+                <span class="material-symbols-outlined">verified</span>
+              </div>
+            </div>
+            <div>
+              <div id="stat-booked-orders" class="kpi-value font-mono">--</div>
+              <div class="kpi-badge purple">
+                <span>SLAs intact</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Delivered -->
+          <div class="kpi-card" id="card-delivered-orders">
+            <div class="kpi-top">
+              <span class="kpi-label">Delivered</span>
+              <div class="kpi-icon-wrap">
+                <span class="material-symbols-outlined">task_alt</span>
+              </div>
+            </div>
+            <div>
+              <div id="stat-delivered-orders" class="kpi-value font-mono">--</div>
+              <div class="kpi-badge green">
+                <span id="stat-ontime-rate">98.4% on-time</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Priority Cutoff Banner -->
+        <div class="priority-banner">
+          <div class="priority-left">
+            <div class="priority-icon">
+              <span class="material-symbols-outlined" style="font-size: 20px;">bolt</span>
+            </div>
+            <div>
+              <div class="priority-title">Same-Day Priority Cutoff</div>
+              <div class="priority-sub">Air cargo departs in <strong id="cutoff-timer" class="font-mono" style="color: var(--executive-gold);">01h 38m</strong></div>
+            </div>
+          </div>
+          <div class="priority-queue">
+            <div class="queue-label">Queue</div>
+            <div id="stat-queue-count" class="queue-count font-mono">23 PKTS</div>
+          </div>
+        </div>
+
+        <!-- Live Staff Submissions Feed -->
+        <div class="section-header">
+          <div class="section-title">
+            <span>Staff Activity Feed</span>
+            <span class="counter-chip"><span class="pulse-dot" style="width: 5px; height: 5px; display:inline-block; margin-right:4px;"></span>Live</span>
+          </div>
+          <button id="btn-quick-sync-feed" class="section-btn">
+            <span class="material-symbols-outlined" style="font-size: 15px;">refresh</span>
+            <span>Sync</span>
+          </button>
+        </div>
+
+        <div id="staff-feed-list" class="feed-list">
+          <!-- Dynamically populated -->
+        </div>
+      </section>
+
+      <!-- TAB 2: LIVE ORDERS MANAGEMENT -->
+      <section id="view-orders" class="view-page">
+        <!-- Search Bar & Actions -->
+        <div class="search-bar-wrap">
+          <span class="material-symbols-outlined search-icon">search</span>
+          <input type="search" id="orders-search-input" class="search-input" placeholder="Search Order ID, Customer, Phone, AWB..." autocomplete="off">
+          <button id="orders-clear-search" class="search-clear-btn" style="display: none;" aria-label="Clear search">
+            <span class="material-symbols-outlined" style="font-size: 18px;">cancel</span>
+          </button>
+        </div>
+
+        <!-- Horizontal Filter Pills Carousel -->
+        <div class="filter-carousel" id="orders-filter-carousel">
+          <button class="filter-pill active" data-filter="all">
+            <span>All</span>
+            <span class="pill-count font-mono" id="filter-count-all">(0)</span>
+          </button>
+          <button class="filter-pill" data-filter="pending">
+            <span>Pending</span>
+            <span class="pill-count font-mono" id="filter-count-pending">0</span>
+          </button>
+          <button class="filter-pill" data-filter="booked">
+            <span>Booked</span>
+            <span class="pill-count font-mono" id="filter-count-booked">0</span>
+          </button>
+          <button class="filter-pill" data-filter="shipped">
+            <span>Shipped</span>
+            <span class="pill-count font-mono" id="filter-count-shipped">0</span>
+          </button>
+          <button class="filter-pill" data-filter="delivered">
+            <span>Delivered</span>
+            <span class="pill-count font-mono" id="filter-count-delivered">0</span>
+          </button>
+          <button class="filter-pill" data-filter="cancelled">
+            <span>Urgent/Cancelled</span>
+            <span class="pill-count font-mono" id="filter-count-cancelled">0</span>
+          </button>
+        </div>
+
+        <!-- Date Filter & Quick Action Strip -->
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
+          <div style="display: flex; gap: 6px;">
+            <button class="filter-pill active date-pill" data-date="all" style="padding: 4px 10px; font-size: 11px;">All Dates</button>
+            <button class="filter-pill date-pill" data-date="today" style="padding: 4px 10px; font-size: 11px;">Today</button>
+            <button class="filter-pill date-pill" data-date="yesterday" style="padding: 4px 10px; font-size: 11px;">Yesterday</button>
+          </div>
+          <button id="btn-export-excel" class="btn-card-secondary" style="height: 32px; padding: 0 10px; font-size: 11px;" title="Export Excel / CSV">
+            <span class="material-symbols-outlined" style="font-size: 15px; color: var(--executive-gold);">download</span>
+            <span>Excel</span>
+          </button>
+        </div>
+
+        <!-- Orders Cards Container -->
+        <div id="orders-container">
+          <!-- Dynamically populated order cards -->
+        </div>
+      </section>
+
+      <!-- TAB 3: REPLACEMENTS & TICKETS -->
+      <section id="view-tickets" class="view-page">
+        <!-- Top Mini Stat Strip -->
+        <div class="stat-strip">
+          <div class="mini-stat-card">
+            <div class="mini-stat-label">Total Tickets</div>
+            <div id="stat-ticket-total" class="mini-stat-val font-mono">0</div>
+          </div>
+          <div class="mini-stat-card">
+            <div class="mini-stat-label" style="color: var(--status-cancelled-text);">Red Urgent</div>
+            <div id="stat-ticket-red" class="mini-stat-val font-mono" style="color: var(--status-cancelled-text);">0</div>
+          </div>
+          <div class="mini-stat-card">
+            <div class="mini-stat-label" style="color: var(--status-review-text);">Orange Review</div>
+            <div id="stat-ticket-orange" class="mini-stat-val font-mono" style="color: var(--status-review-text);">0</div>
+          </div>
+          <div class="mini-stat-card">
+            <div class="mini-stat-label" style="color: var(--status-delivered-text);">Green Routine</div>
+            <div id="stat-ticket-green" class="mini-stat-val font-mono" style="color: var(--status-delivered-text);">0</div>
+          </div>
+          <div class="mini-stat-card">
+            <div class="mini-stat-label" style="color: var(--status-pending-text);">Pending</div>
+            <div id="stat-ticket-pending" class="mini-stat-val font-mono" style="color: var(--status-pending-text);">0</div>
+          </div>
+          <div class="mini-stat-card">
+            <div class="mini-stat-label" style="color: var(--status-delivered-text);">Marked Done</div>
+            <div id="stat-ticket-done" class="mini-stat-val font-mono" style="color: var(--status-delivered-text);">0</div>
+          </div>
+        </div>
+
+        <!-- Search & Action Strip -->
+        <div style="display: flex; gap: 8px; margin-bottom: 10px;">
+          <div class="search-bar-wrap" style="flex: 1; margin-bottom: 0;">
+            <span class="material-symbols-outlined search-icon">search</span>
+            <input type="search" id="tickets-search-input" class="search-input" placeholder="Search ticket, customer, SKU..." autocomplete="off">
+          </div>
+          <button id="btn-open-ai-intake" class="btn-card-secondary" style="height: 44px; padding: 0 12px; background: var(--executive-gold); color: #FFFFFF; border: none;" title="AI WhatsApp Return Intake">
+            <span class="material-symbols-outlined" style="font-size: 19px;">auto_awesome</span>
+          </button>
+          <button id="btn-open-new-ticket" class="btn-card-secondary" style="height: 44px; padding: 0 12px;" title="New Ticket">
+            <span class="material-symbols-outlined" style="font-size: 19px;">add</span>
+          </button>
+        </div>
+
+        <!-- Flag Filter Chips -->
+        <div style="display: flex; gap: 6px; margin-bottom: 12px;">
+          <button class="filter-pill active flag-pill" data-flag="all">All Flags</button>
+          <button class="filter-pill flag-pill" data-flag="red" style="color: var(--status-cancelled-text);">Red Urgent</button>
+          <button class="filter-pill flag-pill" data-flag="orange" style="color: var(--status-review-text);">Orange Review</button>
+          <button class="filter-pill flag-pill" data-flag="green" style="color: var(--status-delivered-text);">Green Routine</button>
+        </div>
+
+        <!-- Tickets Container -->
+        <div id="tickets-container">
+          <!-- Dynamically populated -->
+        </div>
+      </section>
+
+      <!-- TAB 4: MORE MODULES HUB -->
+      <section id="view-more" class="view-page">
+        <!-- Operations & Catalog -->
+        <div class="menu-group-label">Operations & Catalog</div>
+        <div class="menu-card">
+          <button id="menu-courier-booking" class="menu-item">
+            <div class="menu-item-left">
+              <div class="menu-icon-wrap">
+                <span class="material-symbols-outlined">local_shipping</span>
+              </div>
+              <div>
+                <div class="menu-title">Courier Booking & Dispatch</div>
+                <div class="menu-sub">Manual rate comparison & partner selection</div>
+              </div>
+            </div>
+            <span class="material-symbols-outlined menu-chevron">chevron_right</span>
+          </button>
+
+          <button id="menu-products" class="menu-item">
+            <div class="menu-item-left">
+              <div class="menu-icon-wrap">
+                <span class="material-symbols-outlined">inventory_2</span>
+              </div>
+              <div>
+                <div class="menu-title">Products & Catalog</div>
+                <div class="menu-sub">Stock registry and SKU tracking</div>
+              </div>
+            </div>
+            <span class="material-symbols-outlined menu-chevron">chevron_right</span>
+          </button>
+
+          <button id="menu-customers" class="menu-item">
+            <div class="menu-item-left">
+              <div class="menu-icon-wrap">
+                <span class="material-symbols-outlined">group</span>
+              </div>
+              <div>
+                <div class="menu-title">Customers Database</div>
+                <div class="menu-sub">Contact phone, LTV and order histories</div>
+              </div>
+            </div>
+            <span class="material-symbols-outlined menu-chevron">chevron_right</span>
+          </button>
+
+          <button id="menu-shipping" class="menu-item">
+            <div class="menu-item-left">
+              <div class="menu-icon-wrap">
+                <span class="material-symbols-outlined">warehouse</span>
+              </div>
+              <div>
+                <div class="menu-title">Shipping & Hubs</div>
+                <div class="menu-sub">Warehouse docks and routing rules</div>
+              </div>
+            </div>
+            <span class="material-symbols-outlined menu-chevron">chevron_right</span>
+          </button>
+
+          <button id="menu-reports" class="menu-item">
+            <div class="menu-item-left">
+              <div class="menu-icon-wrap">
+                <span class="material-symbols-outlined">analytics</span>
+              </div>
+              <div>
+                <div class="menu-title">Reports & Analytics</div>
+                <div class="menu-sub">Courier cost charts and SLA performance</div>
+              </div>
+            </div>
+            <span class="material-symbols-outlined menu-chevron">chevron_right</span>
+          </button>
+        </div>
+
+        <!-- Administrative Controls (Visible to Admin) -->
+        <div id="admin-menu-section">
+          <div class="menu-group-label" style="color: var(--executive-gold);">Administrative Controls</div>
+          <div class="menu-card">
+            <button id="menu-admin-employees" class="menu-item">
+              <div class="menu-item-left">
+                <div class="menu-icon-wrap">
+                  <span class="material-symbols-outlined">badge</span>
+                </div>
+                <div>
+                  <div class="menu-title">Employees Directory</div>
+                  <div class="menu-sub">Fulfillment staff profiles and onboarding</div>
+                </div>
+              </div>
+              <span class="material-symbols-outlined menu-chevron">chevron_right</span>
+            </button>
+
+            <button id="menu-admin-payroll" class="menu-item">
+              <div class="menu-item-left">
+                <div class="menu-icon-wrap">
+                  <span class="material-symbols-outlined">payments</span>
+                </div>
+                <div>
+                  <div class="menu-title">Payroll Management</div>
+                  <div class="menu-sub">Monthly salary disbursements & approval</div>
+                </div>
+              </div>
+              <span class="material-symbols-outlined menu-chevron">chevron_right</span>
+            </button>
+
+            <button id="menu-admin-incentives" class="menu-item">
+              <div class="menu-item-left">
+                <div class="menu-icon-wrap">
+                  <span class="material-symbols-outlined">stars</span>
+                </div>
+                <div>
+                  <div class="menu-title">Weekly Incentives</div>
+                  <div class="menu-sub">Order commissions and active bonus payouts</div>
+                </div>
+              </div>
+              <span class="material-symbols-outlined menu-chevron">chevron_right</span>
+            </button>
+
+            <button id="menu-admin-audit" class="menu-item">
+              <div class="menu-item-left">
+                <div class="menu-icon-wrap">
+                  <span class="material-symbols-outlined">terminal</span>
+                </div>
+                <div>
+                  <div class="menu-title">Developer Audit Logs</div>
+                  <div class="menu-sub">Shiprocket gateway API transactions</div>
+                </div>
+              </div>
+              <span class="material-symbols-outlined menu-chevron">chevron_right</span>
+            </button>
+
+            <button id="menu-system-settings" class="menu-item">
+              <div class="menu-item-left">
+                <div class="menu-icon-wrap">
+                  <span class="material-symbols-outlined">settings</span>
+                </div>
+                <div>
+                  <div class="menu-title">System Configurations</div>
+                  <div class="menu-sub">Shiprocket token & server endpoint</div>
+                </div>
+              </div>
+              <span class="material-symbols-outlined menu-chevron">chevron_right</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Account & Session -->
+        <div class="menu-group-label">Account & Session</div>
+        <div class="menu-card">
+          <button id="menu-wallet" class="menu-item">
+            <div class="menu-item-left">
+              <div class="menu-icon-wrap gold">
+                <span class="material-symbols-outlined">account_balance_wallet</span>
+              </div>
+              <div>
+                <div class="menu-title">Employee Wallet</div>
+                <div class="menu-sub">Salary, order incentives & commissions</div>
+              </div>
+            </div>
+            <span class="material-symbols-outlined menu-chevron">chevron_right</span>
+          </button>
+
+          <button id="menu-profile" class="menu-item">
+            <div class="menu-item-left">
+              <div class="menu-icon-wrap">
+                <span class="material-symbols-outlined">account_circle</span>
+              </div>
+              <div>
+                <div class="menu-title">Operator Profile</div>
+                <div class="menu-sub">Credentials, backend server & password</div>
+              </div>
+            </div>
+            <span class="material-symbols-outlined menu-chevron">chevron_right</span>
+          </button>
+
+          <button id="menu-logout" class="menu-item">
+            <div class="menu-item-left">
+              <div class="menu-icon-wrap danger">
+                <span class="material-symbols-outlined">logout</span>
+              </div>
+              <div>
+                <div class="menu-title" style="color: var(--status-cancelled-text);">Sign Out</div>
+                <div class="menu-sub">Close active session on this iPhone</div>
+              </div>
+            </div>
+            <span class="material-symbols-outlined menu-chevron">chevron_right</span>
+          </button>
+        </div>
+      </section>
+
+    </main>
+
+    <!-- Fixed Bottom Navigation (Native iOS Haptics & Safe Area Inset) -->
+    <nav id="bottom-nav" class="bottom-nav">
+      <button class="nav-item active" data-tab="cockpit" aria-label="Cockpit">
+        <span class="material-symbols-outlined nav-icon">dashboard</span>
+        <span class="nav-label">Cockpit</span>
+      </button>
+      <button class="nav-item" data-tab="orders" aria-label="Orders">
+        <span class="material-symbols-outlined nav-icon">receipt_long</span>
+        <span class="nav-label">Orders</span>
+      </button>
+      <button class="nav-item" data-tab="tickets" aria-label="Tickets">
+        <span class="material-symbols-outlined nav-icon">assignment_turned_in</span>
+        <span class="nav-label">Tickets</span>
+      </button>
+      <button class="nav-item" data-tab="more" aria-label="More">
+        <span class="material-symbols-outlined nav-icon">grid_view</span>
+        <span class="nav-label">More</span>
+      </button>
+    </nav>
+
+    <!-- FULLSCREEN LOGIN OVERLAY (Same as Android App Login) -->
+    <div id="view-login" class="fullscreen-page">
+      <div style="width: 100%; max-width: 360px; text-align: center;">
+        
+        <!-- App Icon -->
+        <div style="width: 68px; height: 68px; border-radius: 18px; background: var(--primary-ink); margin: 0 auto 16px auto; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 16px rgba(0,0,0,0.15); overflow: hidden;">
+          <img src="./icons/app_icon.png" alt="Dappersfit" style="width: 100%; height: 100%; object-fit: cover;" onerror="this.src='./icons/icon-192.png'">
+        </div>
+
+        <h1 style="font-size: 24px; font-weight: 700; color: var(--primary-ink); letter-spacing: -0.5px; margin-bottom: 4px;">Dappersfit</h1>
+        <p style="font-size: 13px; color: var(--meta-gray); margin-bottom: 24px;">Order & Shiprocket Operations Console</p>
+
+        <!-- Role Selector -->
+        <div style="display: flex; background: var(--surface-low); border-radius: var(--radius-pill); padding: 4px; margin-bottom: 16px;">
+          <button type="button" class="login-role-btn active" data-role="admin" style="flex:1; height: 34px; border-radius: var(--radius-pill); border: none; font-size: 12px; font-weight: 700; background: var(--primary-ink); color: #fff;">Admin</button>
+          <button type="button" class="login-role-btn" data-role="employee" style="flex:1; height: 34px; border-radius: var(--radius-pill); border: none; font-size: 12px; font-weight: 600; background: transparent; color: var(--body-slate);">Staff</button>
+        </div>
+
+        <!-- Login Form -->
+        <form id="login-form">
+          <div class="form-group" style="text-align: left;">
+            <label class="form-label" for="login-email">Operator Email / ID</label>
+            <input type="email" id="login-email" class="form-control" value="admin@dappersfit.com" required autocomplete="username">
+          </div>
+          <div class="form-group" style="text-align: left;">
+            <label class="form-label" for="login-password">Security Password</label>
+            <input type="password" id="login-password" class="form-control" value="admin123" required autocomplete="current-password">
+          </div>
+
+          <button type="submit" id="btn-login-submit" class="btn-ink-primary" style="margin-top: 8px;">
+            <span class="material-symbols-outlined" style="font-size: 20px;">login</span>
+            <span>Authenticate Session</span>
+          </button>
+        </form>
+
+        <!-- Quick 1-Tap Demo Logins -->
+        <div style="margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--hairline-border);">
+          <div style="font-size: 11px; font-weight: 600; color: var(--meta-gray); text-transform: uppercase; margin-bottom: 10px;">Quick 1-Tap Sign-In</div>
+          <div style="display: flex; gap: 8px;">
+            <button type="button" id="btn-quick-admin" class="btn-card-secondary" style="flex: 1; height: 38px; font-size: 12px;">Admin Demo</button>
+            <button type="button" id="btn-quick-staff" class="btn-card-secondary" style="flex: 1; height: 38px; font-size: 12px;">Staff Demo</button>
+          </div>
+        </div>
+
+        <!-- Live Server Status Indicator -->
+        <div style="margin-top: 24px; display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: var(--radius-pill); background: var(--surface-low); font-size: 11px; color: var(--body-slate);">
+          <span class="pulse-dot" style="width: 6px; height: 6px;"></span>
+          <span id="login-server-status">Render Backend: dappersfit.onrender.com</span>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- MODAL OVERLAY (Used by all slide-up sheets) -->
+    <div id="modal-overlay" class="modal-overlay"></div>
+
+    <!-- SHEET: ORDER DETAIL (Slide-up native sheet) -->
+    <div id="sheet-order-detail" class="modal-sheet">
+      <div class="sheet-handle"></div>
+      <div class="sheet-header">
+        <div>
+          <span id="detail-order-number" class="sheet-title font-mono">DF-XXXX</span>
+          <span id="detail-order-date" style="font-size: 12px; color: var(--meta-gray); margin-left: 8px;">--</span>
+        </div>
+        <button class="sheet-close-btn" data-close-sheet="sheet-order-detail">
+          <span class="material-symbols-outlined" style="font-size: 18px;">close</span>
+        </button>
+      </div>
+      <div class="sheet-body" id="detail-sheet-content">
+        <!-- Dynamically injected -->
+      </div>
+    </div>
+
+    <!-- SHEET: MANUAL COURIER BOOKING WIZARD -->
+    <div id="sheet-courier-booking" class="modal-sheet">
+      <div class="sheet-handle"></div>
+      <div class="sheet-header">
+        <span class="sheet-title">Courier Booking & Dispatch</span>
+        <button class="sheet-close-btn" data-close-sheet="sheet-courier-booking">
+          <span class="material-symbols-outlined" style="font-size: 18px;">close</span>
+        </button>
+      </div>
+      <div class="sheet-body" id="booking-sheet-content">
+        <!-- Dynamically injected wizard -->
+      </div>
+    </div>
+
+    <!-- SHEET: AI WHATSAPP INTAKE -->
+    <div id="sheet-ai-intake" class="modal-sheet">
+      <div class="sheet-handle"></div>
+      <div class="sheet-header">
+        <span class="sheet-title">AI WhatsApp Return Parser</span>
+        <button class="sheet-close-btn" data-close-sheet="sheet-ai-intake">
+          <span class="material-symbols-outlined" style="font-size: 18px;">close</span>
+        </button>
+      </div>
+      <div class="sheet-body">
+        <p style="font-size: 12px; color: var(--body-slate); margin-bottom: 12px;">Paste customer WhatsApp message or return conversation below. AI will automatically extract customer details, SKU, and exchange reasons.</p>
+        <div class="form-group">
+          <textarea id="ai-intake-text" class="form-control" style="height: 110px; padding: 10px; font-size: 13px;" placeholder="Example: Hi, I received order DF-1306 yesterday. The shirt size L is too tight, I need size XL replacement. - Rajesh (9876543210)"></textarea>
+        </div>
+        <button type="button" id="btn-run-ai-parse" class="btn-gold-primary" style="margin-bottom: 16px;">
+          <span class="material-symbols-outlined" style="font-size: 18px;">auto_awesome</span>
+          <span>Parse with AI Logic</span>
+        </button>
+
+        <div id="ai-parsed-preview" style="display: none; background: var(--surface); border: 1px solid var(--hairline-border); border-radius: var(--radius-md); padding: 14px; margin-bottom: 14px;">
+          <div style="font-size: 12px; font-weight: 700; color: var(--primary-ink); margin-bottom: 8px;">Extracted Ticket Details:</div>
+          <div id="ai-parsed-fields" style="font-size: 12px; color: var(--body-slate); line-height: 1.6;"></div>
+          <button type="button" id="btn-save-ai-ticket" class="btn-ink-primary" style="margin-top: 12px; height: 40px; font-size: 13px;">Create Replacement Ticket</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- SHEET: LOG NEW REPLACEMENT -->
+    <div id="sheet-new-ticket" class="modal-sheet">
+      <div class="sheet-handle"></div>
+      <div class="sheet-header">
+        <span class="sheet-title">Log Replacement Ticket</span>
+        <button class="sheet-close-btn" data-close-sheet="sheet-new-ticket">
+          <span class="material-symbols-outlined" style="font-size: 18px;">close</span>
+        </button>
+      </div>
+      <div class="sheet-body">
+        <form id="new-ticket-form">
+          <div class="form-group">
+            <label class="form-label" for="ticket-order-id">Order ID</label>
+            <input type="text" id="ticket-order-id" class="form-control" placeholder="e.g. DF-1306" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="ticket-customer-name">Customer Name</label>
+            <input type="text" id="ticket-customer-name" class="form-control" placeholder="Customer name" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="ticket-sku">Product SKU</label>
+            <input type="text" id="ticket-sku" class="form-control" placeholder="e.g. SKU-SHIRT-XL" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="ticket-flag-level">Severity Flag</label>
+            <select id="ticket-flag-level" class="form-control">
+              <option value="green">Green (Routine size exchange)</option>
+              <option value="orange">Orange (Defect / Damaged in transit)</option>
+              <option value="red">Red (Urgent / Angry customer / Wrong item)</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="ticket-reason">Reason Description</label>
+            <textarea id="ticket-reason" class="form-control" style="height: 70px;" placeholder="Customer remarks..." required></textarea>
+          </div>
+          <button type="submit" class="btn-gold-primary">
+            <span class="material-symbols-outlined" style="font-size: 18px;">save</span>
+            <span>Submit Ticket</span>
+          </button>
+        </form>
+      </div>
+    </div>
+
+    <!-- SHEET: GENERIC SUBVIEWS (Products, Customers, Shipping, Reports, Wallet, Admin) -->
+    <div id="sheet-submodule" class="modal-sheet">
+      <div class="sheet-handle"></div>
+      <div class="sheet-header">
+        <span id="submodule-title" class="sheet-title">Module</span>
+        <button class="sheet-close-btn" data-close-sheet="sheet-submodule">
+          <span class="material-symbols-outlined" style="font-size: 18px;">close</span>
+        </button>
+      </div>
+      <div class="sheet-body" id="submodule-content">
+        <!-- Injected on demand -->
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Main JavaScript Application Logic -->
+  <script src="./app.js"></script>
+
+  <!-- Service Worker Registration for PWA Offline Fast Render -->
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./sw.js')
+          .then(reg => console.log('Dappersfit PWA Service Worker Registered', reg.scope))
+          .catch(err => console.warn('Service Worker registration skipped:', err));
+      });
+    }
+  </script>
+</body>
+</html>

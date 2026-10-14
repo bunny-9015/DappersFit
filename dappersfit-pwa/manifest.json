@@ -1,0 +1,53 @@
+{
+  "name": "Dappersfit Logistics — iPhone Operations",
+  "short_name": "Dappersfit",
+  "description": "Kinetic Luxury Logistics fulfillment cockpit, Shiprocket priority dispatch, ticket intake, catalog and employee wallet.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "display_override": ["standalone", "minimal-ui", "window-controls-overlay"],
+  "orientation": "portrait-primary",
+  "background_color": "#FAF9F6",
+  "theme_color": "#1C1B1A",
+  "lang": "en",
+  "icons": [
+    {
+      "src": "icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "apple-touch-icon.png",
+      "sizes": "180x180",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Cockpit Dashboard",
+      "short_name": "Cockpit",
+      "url": "./index.html#cockpit",
+      "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Orders Management",
+      "short_name": "Orders",
+      "url": "./index.html#orders",
+      "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Replacements",
+      "short_name": "Tickets",
+      "url": "./index.html#tickets",
+      "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }]
+    }
+  ]
+}
