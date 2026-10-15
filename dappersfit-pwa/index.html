@@ -16,6 +16,7 @@
 
   <!-- Icons -->
   <link rel="manifest" href="./manifest.json">
+  <link rel="icon" type="image/png" sizes="32x32" href="./favicon.png">
   <link rel="apple-touch-icon" sizes="180x180" href="./apple-touch-icon.png">
   <link rel="icon" type="image/png" sizes="192x192" href="./icons/icon-192.png">
 
@@ -200,42 +201,42 @@
           </button>
         </div>
 
-        <!-- Horizontal Filter Pills Carousel -->
+        <!-- Horizontal Filter Pills Carousel (Matches Android Flutter App) -->
         <div class="filter-carousel" id="orders-filter-carousel">
           <button class="filter-pill active" data-filter="all">
             <span>All</span>
             <span class="pill-count font-mono" id="filter-count-all">(0)</span>
           </button>
           <button class="filter-pill" data-filter="pending">
-            <span>Pending</span>
+            <span>Pending Approval</span>
             <span class="pill-count font-mono" id="filter-count-pending">0</span>
           </button>
-          <button class="filter-pill" data-filter="booked">
-            <span>Booked</span>
-            <span class="pill-count font-mono" id="filter-count-booked">0</span>
-          </button>
-          <button class="filter-pill" data-filter="shipped">
-            <span>Shipped</span>
-            <span class="pill-count font-mono" id="filter-count-shipped">0</span>
+          <button class="filter-pill" data-filter="active">
+            <span>Active Shipments</span>
+            <span class="pill-count font-mono" id="filter-count-active">0</span>
           </button>
           <button class="filter-pill" data-filter="delivered">
             <span>Delivered</span>
             <span class="pill-count font-mono" id="filter-count-delivered">0</span>
           </button>
           <button class="filter-pill" data-filter="cancelled">
-            <span>Urgent/Cancelled</span>
+            <span>Cancelled / Failed</span>
             <span class="pill-count font-mono" id="filter-count-cancelled">0</span>
           </button>
         </div>
 
-        <!-- Date Filter & Quick Action Strip -->
-        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
-          <div style="display: flex; gap: 6px;">
+        <!-- Date Filter & Quick Action Strip (Matches Android App) -->
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; gap: 6px;">
+          <div style="display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px;">
             <button class="filter-pill active date-pill" data-date="all" style="padding: 4px 10px; font-size: 11px;">All Dates</button>
             <button class="filter-pill date-pill" data-date="today" style="padding: 4px 10px; font-size: 11px;">Today</button>
             <button class="filter-pill date-pill" data-date="yesterday" style="padding: 4px 10px; font-size: 11px;">Yesterday</button>
+            <button class="filter-pill date-pill" id="btn-custom-date" data-date="custom" style="padding: 4px 10px; font-size: 11px;">
+              <span id="label-custom-date">Custom Date</span>
+            </button>
+            <input type="date" id="orders-custom-date" style="position: absolute; opacity: 0; pointer-events: none; width: 0; height: 0;">
           </div>
-          <button id="btn-export-excel" class="btn-card-secondary" style="height: 32px; padding: 0 10px; font-size: 11px;" title="Export Excel / CSV">
+          <button id="btn-export-excel" class="btn-card-secondary" style="height: 32px; padding: 0 10px; font-size: 11px; flex-shrink: 0;" title="Export Excel / CSV">
             <span class="material-symbols-outlined" style="font-size: 15px; color: var(--executive-gold);">download</span>
             <span>Excel</span>
           </button>
@@ -245,6 +246,11 @@
         <div id="orders-container">
           <!-- Dynamically populated order cards -->
         </div>
+
+        <!-- Floating Action Button: Add New Order (Matches Android App) -->
+        <button id="btn-add-order-fab" class="btn-fab" title="Add New Order" aria-label="Add New Order">
+          <span class="material-symbols-outlined" style="font-size: 28px;">add</span>
+        </button>
       </section>
 
       <!-- TAB 3: REPLACEMENTS & TICKETS -->
@@ -514,7 +520,7 @@
     </nav>
 
     <!-- FULLSCREEN LOGIN OVERLAY (Same as Android App Login) -->
-    <div id="view-login" class="fullscreen-page">
+    <div id="view-login" class="fullscreen-page hidden">
       <div style="width: 100%; max-width: 360px; text-align: center;">
         
         <!-- App Icon -->
@@ -523,23 +529,32 @@
         </div>
 
         <h1 style="font-size: 24px; font-weight: 700; color: var(--primary-ink); letter-spacing: -0.5px; margin-bottom: 4px;">Dappersfit</h1>
-        <p style="font-size: 13px; color: var(--meta-gray); margin-bottom: 24px;">Order & Shiprocket Operations Console</p>
+        <p style="font-size: 13px; color: var(--meta-gray); margin-bottom: 24px;">Order &amp; Shiprocket Operations Console</p>
 
-        <!-- Role Selector -->
+        <!-- Role Selector (Administrator vs Fulfillment Staff) -->
         <div style="display: flex; background: var(--surface-low); border-radius: var(--radius-pill); padding: 4px; margin-bottom: 16px;">
-          <button type="button" class="login-role-btn active" data-role="admin" style="flex:1; height: 34px; border-radius: var(--radius-pill); border: none; font-size: 12px; font-weight: 700; background: var(--primary-ink); color: #fff;">Admin</button>
-          <button type="button" class="login-role-btn" data-role="employee" style="flex:1; height: 34px; border-radius: var(--radius-pill); border: none; font-size: 12px; font-weight: 600; background: transparent; color: var(--body-slate);">Staff</button>
+          <button type="button" class="login-role-btn active" data-role="admin" style="flex:1; height: 36px; border-radius: var(--radius-pill); border: none; font-size: 12px; font-weight: 700; background: var(--primary-ink); color: #fff; display: flex; align-items: center; justify-content: center; gap: 6px;">
+            <span class="material-symbols-outlined" style="font-size: 16px;">verified_user</span>
+            <span>Administrator</span>
+          </button>
+          <button type="button" class="login-role-btn" data-role="employee" style="flex:1; height: 36px; border-radius: var(--radius-pill); border: none; font-size: 12px; font-weight: 600; background: transparent; color: var(--body-slate); display: flex; align-items: center; justify-content: center; gap: 6px;">
+            <span class="material-symbols-outlined" style="font-size: 16px;">person</span>
+            <span>Fulfillment Staff</span>
+          </button>
         </div>
 
-        <!-- Login Form -->
+        <!-- Login Error Alert Banner -->
+        <div id="login-error-msg" style="display: none; padding: 10px 12px; margin-bottom: 14px; border-radius: var(--radius-md); background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.25); color: #ef4444; font-size: 12px; text-align: left; line-height: 1.4;"></div>
+
+        <!-- Login Form with Real Credentials -->
         <form id="login-form">
           <div class="form-group" style="text-align: left;">
-            <label class="form-label" for="login-email">Operator Email / ID</label>
-            <input type="email" id="login-email" class="form-control" value="admin@dappersfit.com" required autocomplete="username">
+            <label class="form-label" for="login-email">Email Address</label>
+            <input type="email" id="login-email" class="form-control" placeholder="dappersfit@gmail.com" required autocomplete="username">
           </div>
           <div class="form-group" style="text-align: left;">
-            <label class="form-label" for="login-password">Security Password</label>
-            <input type="password" id="login-password" class="form-control" value="admin123" required autocomplete="current-password">
+            <label class="form-label" for="login-password">Password</label>
+            <input type="password" id="login-password" class="form-control" placeholder="••••••••" required autocomplete="current-password">
           </div>
 
           <button type="submit" id="btn-login-submit" class="btn-ink-primary" style="margin-top: 8px;">
@@ -548,19 +563,10 @@
           </button>
         </form>
 
-        <!-- Quick 1-Tap Demo Logins -->
-        <div style="margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--hairline-border);">
-          <div style="font-size: 11px; font-weight: 600; color: var(--meta-gray); text-transform: uppercase; margin-bottom: 10px;">Quick 1-Tap Sign-In</div>
-          <div style="display: flex; gap: 8px;">
-            <button type="button" id="btn-quick-admin" class="btn-card-secondary" style="flex: 1; height: 38px; font-size: 12px;">Admin Demo</button>
-            <button type="button" id="btn-quick-staff" class="btn-card-secondary" style="flex: 1; height: 38px; font-size: 12px;">Staff Demo</button>
-          </div>
-        </div>
-
         <!-- Live Server Status Indicator -->
         <div style="margin-top: 24px; display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: var(--radius-pill); background: var(--surface-low); font-size: 11px; color: var(--body-slate);">
           <span class="pulse-dot" style="width: 6px; height: 6px;"></span>
-          <span id="login-server-status">Render Backend: dappersfit.onrender.com</span>
+          <span id="login-server-status">Live Server: dappersfit.onrender.com</span>
         </div>
 
       </div>
@@ -568,6 +574,95 @@
 
     <!-- MODAL OVERLAY (Used by all slide-up sheets) -->
     <div id="modal-overlay" class="modal-overlay"></div>
+
+    <!-- SHEET: REGISTER NEW ORDER WITH AI PARSER (Matches Android App) -->
+    <div id="sheet-add-order" class="modal-sheet">
+      <div class="sheet-handle"></div>
+      <div class="sheet-header">
+        <span class="sheet-title">Register New Order</span>
+        <button class="sheet-close-btn" data-close-sheet="sheet-add-order">
+          <span class="material-symbols-outlined" style="font-size: 18px;">close</span>
+        </button>
+      </div>
+      <div class="sheet-body">
+        <!-- AI Smart Parser Card -->
+        <div style="padding: 12px; background: var(--surface-low); border: 1px solid rgba(184, 134, 47, 0.35); border-radius: var(--radius-md); margin-bottom: 14px;">
+          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
+            <div style="display: flex; align-items: center; gap: 6px; color: var(--executive-gold); font-weight: 700; font-size: 11px; letter-spacing: 0.5px;">
+              <span class="material-symbols-outlined" style="font-size: 17px;">psychology</span>
+              <span>AI PRODUCT &amp; ADDRESS PARSER</span>
+            </div>
+            <span id="ai-parsed-chip" style="display: none; padding: 2px 6px; border-radius: 4px; background: var(--status-delivered-bg); color: var(--status-delivered-text); font-size: 9px; font-weight: 700;">PARSED ✓</span>
+          </div>
+          <p style="font-size: 11px; color: var(--meta-gray); margin-bottom: 8px;">Paste customer WhatsApp/chat message. AI extracts name, phone, address, and amount automatically.</p>
+          <textarea id="ai-order-prompt" class="form-control" style="height: 68px; font-size: 12px;" placeholder="e.g., ADARI RAMACHANDRA NAIDU, Kandhepalli Village, Chodavaram 531036, Phone: 7075091008, 1 wg for Rs 1699 COD"></textarea>
+          <button type="button" id="btn-parse-ai-order" class="btn-card-secondary" style="width: 100%; margin-top: 8px; height: 36px; border-color: var(--executive-gold); color: var(--executive-gold);">
+            <span class="material-symbols-outlined" style="font-size: 16px;">auto_awesome</span>
+            <span>Parse Address &amp; Product via AI</span>
+          </button>
+          <div id="ai-order-status" style="font-size: 11px; margin-top: 6px; display: none;"></div>
+        </div>
+
+        <!-- Manual Review & Edit Fields -->
+        <form id="form-add-order">
+          <div class="form-group">
+            <label class="form-label" for="new-order-customer-name">Customer Full Name *</label>
+            <input type="text" id="new-order-customer-name" class="form-control" placeholder="e.g. Adari Ramachandra Naidu" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="new-order-phone">Phone Number (+91) *</label>
+            <input type="tel" id="new-order-phone" class="form-control font-mono" placeholder="10-digit mobile number" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="new-order-address">Street Address *</label>
+            <input type="text" id="new-order-address" class="form-control" placeholder="House / Flat / Street / Landmark" required>
+          </div>
+          <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px;">
+            <div class="form-group">
+              <label class="form-label" for="new-order-city">City *</label>
+              <input type="text" id="new-order-city" class="form-control" placeholder="City" required>
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="new-order-state">State</label>
+              <input type="text" id="new-order-state" class="form-control" placeholder="State" value="India">
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="new-order-pincode">Pincode *</label>
+              <input type="text" id="new-order-pincode" class="form-control font-mono" placeholder="6 digits" required>
+            </div>
+          </div>
+
+          <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 8px;">
+            <div class="form-group">
+              <label class="form-label" for="new-order-item-name">Item Name *</label>
+              <input type="text" id="new-order-item-name" class="form-control" value="Drone 4K Camera Ultra HD" required>
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="new-order-amount">Amount (₹) *</label>
+              <input type="number" id="new-order-amount" class="form-control font-mono" value="1499" required>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="new-order-payment">Payment Method *</label>
+            <select id="new-order-payment" class="form-control">
+              <option value="Cash On Delivery (COD)">Cash On Delivery (COD)</option>
+              <option value="Prepaid">Prepaid</option>
+            </select>
+          </div>
+
+          <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 14px; padding: 10px; background: var(--surface-low); border: 1px solid var(--hairline-border); border-radius: var(--radius-sm);">
+            <input type="checkbox" id="new-order-advance" style="width: 18px; height: 18px; accent-color: var(--executive-gold);">
+            <label for="new-order-advance" style="font-size: 12px; color: var(--primary-ink); font-weight: 500;">Product Advance Paid (Extra Commission Eligible)</label>
+          </div>
+
+          <button type="submit" id="btn-submit-new-order" class="btn-gold-primary" style="width: 100%; height: 46px; font-size: 14px;">
+            <span class="material-symbols-outlined">add_task</span>
+            <span>Register Order</span>
+          </button>
+        </form>
+      </div>
+    </div>
 
     <!-- SHEET: ORDER DETAIL (Slide-up native sheet) -->
     <div id="sheet-order-detail" class="modal-sheet">
@@ -685,6 +780,9 @@
     </div>
 
   </div>
+
+  <!-- Real-Time Firebase Firestore Synchronization Engine -->
+  <script type="module" src="./firebase-service.js"></script>
 
   <!-- Main JavaScript Application Logic -->
   <script src="./app.js"></script>

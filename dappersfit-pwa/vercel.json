@@ -1,6 +1,14 @@
 {
   "version": 2,
+  "framework": null,
+  "outputDirectory": ".",
   "cleanUrls": true,
+  "rewrites": [
+    {
+      "source": "/api/(.*)",
+      "destination": "https://dappersfit.onrender.com/api/$1"
+    }
+  ],
   "headers": [
     {
       "source": "/sw.js",

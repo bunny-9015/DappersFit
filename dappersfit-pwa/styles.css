@@ -1,10 +1,13 @@
 /* ==========================================================================
    Dappersfit Logistics PWA - iPhone Native Luxury Style System
    Specifically optimized for Apple iOS Safari WebKit & Standalone PWA Mode
+   Matches Dappersfit Android App and Design System Specifications
    ========================================================================== */
 
 :root {
-  /* Core Luxury Canvas & Surfaces */
+  color-scheme: light;
+  
+  /* Core Luxury Canvas & Surfaces (Exact Hex-Locked Palette) */
   --canvas: #FAF9F6;
   --surface: #FFFFFF;
   --surface-low: #F4F3F0;
@@ -56,18 +59,17 @@
   --radius-pill: 9999px;
   --shadow-subtle: 0 1px 4px rgba(0, 0, 0, 0.04);
   --shadow-card: 0 2px 10px rgba(0, 0, 0, 0.05);
-  --shadow-sheet: 0 -8px 30px rgba(0, 0, 0, 0.12);
+  --shadow-sheet: 0 -8px 30px rgba(0, 0, 0, 0.16);
   --shadow-gold: 0 4px 14px rgba(184, 134, 47, 0.28);
 }
 
 /* ==========================================================================
-   RESET & iPHONE WEBKIT OPTIMIZATIONS (Eliminates Mistouch & Lag)
+   RESET & iPHONE WEBKIT TOUCH OPTIMIZATIONS
    ========================================================================== */
 *, *::before, *::after {
   box-sizing: border-box;
   margin: 0;
   padding: 0;
-  /* Eliminate the grey rectangular tap flash on iOS WebKit */
   -webkit-tap-highlight-color: transparent;
 }
 
@@ -82,46 +84,53 @@ html, body {
   line-height: 1.45;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  /* Prevent the notorious iOS Safari whole-page elastic rubber-band pull */
   overscroll-behavior: none;
-  /* Prevent horizontal pan jumps */
   touch-action: pan-y;
 }
 
-/* Prevent accidental text selection during fast swiping, except for copyable fields */
-body, button, input, select, textarea, .nav-item, .header-bar, .metric-card, .filter-chip {
+/* Prevent accidental text highlight dragging while swiping */
+body, button, .nav-item, .app-header, .kpi-card, .filter-pill, .badge-dot {
   -webkit-user-select: none;
   user-select: none;
   -webkit-touch-callout: none;
 }
 
-/* Allow text copy on order numbers, phone numbers, AWBs and addresses */
+/* Allow text copy on order IDs, AWBs, and phone numbers */
 .selectable, .order-id, .awb-code, .phone-num, .address-text, input, textarea {
   -webkit-user-select: text !important;
   user-select: text !important;
   -webkit-touch-callout: default !important;
 }
 
-/* Immediate touch responses without 300ms delay */
-button, a, .clickable, .filter-chip, .tab-btn {
+/* Fast tap response without 300ms delay */
+button, a, .clickable, .filter-pill, .menu-item, .order-card {
   touch-action: manipulation;
   cursor: pointer;
 }
 
-/* Hide scrollbars for clean native iOS app feel while retaining momentum scroll */
+/* Hide scrollbars for clean native iOS app feel */
 ::-webkit-scrollbar {
   display: none !important;
   width: 0 !important;
   height: 0 !important;
 }
 
-/* Monospace font utility for code and numbers */
 .font-mono {
   font-family: 'JetBrains Mono', 'SF Mono', Menlo, Consolas, monospace;
 }
 
+/* Spin animation for refresh icon */
+@keyframes spin-refresh {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.spinning {
+  animation: spin-refresh 0.8s linear infinite;
+}
+
 /* ==========================================================================
-   APP SHELL LAYOUT (iOS Notch & Dynamic Island Integration)
+   APP SHELL LAYOUT
    ========================================================================== */
 #app-root {
   display: flex;
@@ -133,7 +142,6 @@ button, a, .clickable, .filter-chip, .tab-btn {
   position: relative;
   background-color: var(--canvas);
   overflow: hidden;
-  box-shadow: 0 0 40px rgba(0, 0, 0, 0.06);
 }
 
 /* Fixed Top Header */
@@ -146,11 +154,10 @@ button, a, .clickable, .filter-chip, .tab-btn {
   margin: 0 auto;
   z-index: 100;
   padding-top: var(--safe-top);
-  background: rgba(250, 249, 246, 0.88);
+  background: rgba(250, 249, 246, 0.92);
   -webkit-backdrop-filter: blur(20px);
   backdrop-filter: blur(20px);
   border-bottom: 1px solid var(--hairline-border);
-  transition: transform 0.25s ease;
 }
 
 .header-content {
@@ -168,8 +175,8 @@ button, a, .clickable, .filter-chip, .tab-btn {
 }
 
 .brand-icon-box {
-  width: 34px;
-  height: 34px;
+  width: 36px;
+  height: 36px;
   border-radius: 10px;
   background: var(--primary-ink);
   display: flex;
@@ -177,6 +184,7 @@ button, a, .clickable, .filter-chip, .tab-btn {
   justify-content: center;
   overflow: hidden;
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+  flex-shrink: 0;
 }
 
 .brand-icon-box img {
@@ -216,12 +224,12 @@ button, a, .clickable, .filter-chip, .tab-btn {
 }
 
 .header-btn {
-  width: 36px;
-  height: 36px;
+  width: 38px;
+  height: 38px;
   border-radius: var(--radius-pill);
   background: var(--surface);
   border: 1px solid var(--hairline-border);
-  color: var(--body-slate);
+  color: var(--primary-ink);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -235,8 +243,8 @@ button, a, .clickable, .filter-chip, .tab-btn {
 }
 
 .avatar-btn {
-  width: 36px;
-  height: 36px;
+  width: 38px;
+  height: 38px;
   border-radius: var(--radius-pill);
   border: 1.5px solid var(--executive-gold);
   overflow: hidden;
@@ -253,43 +261,37 @@ button, a, .clickable, .filter-chip, .tab-btn {
   object-fit: cover;
 }
 
-.badge-dot {
-  position: absolute;
-  top: 7px;
-  right: 7px;
-  width: 6px;
-  height: 6px;
-  border-radius: var(--radius-pill);
-  background: var(--executive-gold);
-}
-
 /* ==========================================================================
-   VIEW CONTAINERS & NATIVE SCROLL
+   VIEWPORT & PAGES (Exact padding to avoid header/footer overlap)
    ========================================================================== */
 .view-viewport {
-  flex: 1;
+  position: relative;
   width: 100%;
   height: 100%;
-  position: relative;
   overflow: hidden;
-  padding-top: calc(var(--header-height) + var(--safe-top));
-  padding-bottom: calc(var(--bottom-nav-height) + var(--safe-bottom));
 }
 
 .view-page {
   position: absolute;
   top: 0;
   left: 0;
+  right: 0;
+  bottom: 0;
   width: 100%;
   height: 100%;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
-  padding: 14px 16px 30px 16px;
+  /* CRITICAL: Padding ensures content clears fixed header & bottom nav */
+  padding-top: calc(var(--header-height) + var(--safe-top) + 12px);
+  padding-bottom: calc(var(--bottom-nav-height) + var(--safe-bottom) + 32px);
+  padding-left: 16px;
+  padding-right: 16px;
+  box-sizing: border-box;
   opacity: 0;
   visibility: hidden;
   pointer-events: none;
-  transform: translateY(6px);
-  transition: opacity 0.2s cubic-bezier(0.16, 1, 0.3, 1), transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  transform: translateY(4px);
+  transition: opacity 0.18s ease, transform 0.18s ease;
 }
 
 .view-page.active {
@@ -299,7 +301,7 @@ button, a, .clickable, .filter-chip, .tab-btn {
   transform: translateY(0);
 }
 
-/* Fullscreen special pages (e.g., Login) */
+/* Fullscreen pages (Login) */
 .fullscreen-page {
   position: fixed;
   top: 0;
@@ -315,18 +317,18 @@ button, a, .clickable, .filter-chip, .tab-btn {
   flex-direction: column;
   justify-content: center;
   align-items: center;
-  transition: opacity 0.3s ease, transform 0.3s ease;
+  transition: opacity 0.25s ease, transform 0.25s ease;
 }
 
 .fullscreen-page.hidden {
+  display: none !important;
   opacity: 0;
   visibility: hidden;
   pointer-events: none;
-  transform: scale(0.97);
 }
 
 /* ==========================================================================
-   BOTTOM NAVIGATION BAR (iOS Native Style)
+   BOTTOM NAVIGATION BAR
    ========================================================================== */
 .bottom-nav {
   position: fixed;
@@ -338,7 +340,7 @@ button, a, .clickable, .filter-chip, .tab-btn {
   z-index: 100;
   height: calc(var(--bottom-nav-height) + var(--safe-bottom));
   padding-bottom: var(--safe-bottom);
-  background: rgba(255, 255, 255, 0.92);
+  background: rgba(255, 255, 255, 0.94);
   -webkit-backdrop-filter: blur(25px);
   backdrop-filter: blur(25px);
   border-top: 1px solid var(--hairline-border);
@@ -396,7 +398,7 @@ button, a, .clickable, .filter-chip, .tab-btn {
    LIVE FEED STATUS STRIP & REFRESH BAR
    ========================================================================== */
 .live-status-bar {
-  background: rgba(255, 255, 255, 0.95);
+  background: var(--surface);
   border: 1px solid var(--hairline-border);
   border-radius: var(--radius-pill);
   padding: 8px 14px;
@@ -405,6 +407,7 @@ button, a, .clickable, .filter-chip, .tab-btn {
   justify-content: space-between;
   margin-bottom: 14px;
   box-shadow: var(--shadow-subtle);
+  cursor: pointer;
 }
 
 .live-indicator {
@@ -419,6 +422,7 @@ button, a, .clickable, .filter-chip, .tab-btn {
   height: 8px;
   border-radius: 50%;
   background: var(--executive-gold);
+  flex-shrink: 0;
 }
 
 .pulse-dot::after {
@@ -474,11 +478,12 @@ button, a, .clickable, .filter-chip, .tab-btn {
   flex-direction: column;
   justify-content: space-between;
   min-height: 98px;
-  transition: transform 0.15s ease, box-shadow 0.15s ease;
+  transition: transform 0.15s ease, border-color 0.15s ease;
 }
 
 .kpi-card:active {
-  transform: scale(0.98);
+  transform: scale(0.97);
+  border-color: var(--border-strong);
 }
 
 .kpi-top {
@@ -530,25 +535,10 @@ button, a, .clickable, .filter-chip, .tab-btn {
   width: fit-content;
 }
 
-.kpi-badge.gold {
-  background: var(--surface-container);
-  color: var(--executive-gold-dark);
-}
-
-.kpi-badge.pending {
-  background: var(--status-pending-bg);
-  color: var(--status-pending-text);
-}
-
-.kpi-badge.purple {
-  background: var(--status-booked-bg);
-  color: var(--status-booked-text);
-}
-
-.kpi-badge.green {
-  background: var(--status-delivered-bg);
-  color: var(--status-delivered-text);
-}
+.kpi-badge.gold { background: var(--surface-container); color: var(--executive-gold-dark); }
+.kpi-badge.pending { background: var(--status-pending-bg); color: var(--status-pending-text); }
+.kpi-badge.purple { background: var(--status-booked-bg); color: var(--status-booked-text); }
+.kpi-badge.green { background: var(--status-delivered-bg); color: var(--status-delivered-text); }
 
 /* ==========================================================================
    PRIORITY DISPATCH CALLOUT BANNER
@@ -579,6 +569,7 @@ button, a, .clickable, .filter-chip, .tab-btn {
   display: flex;
   align-items: center;
   justify-content: center;
+  flex-shrink: 0;
 }
 
 .priority-title {
@@ -611,7 +602,7 @@ button, a, .clickable, .filter-chip, .tab-btn {
 }
 
 /* ==========================================================================
-   SECTION HEADERS & QUICK ACTIONS
+   FEED ITEMS & CARDS
    ========================================================================== */
 .section-header {
   display: flex;
@@ -650,9 +641,6 @@ button, a, .clickable, .filter-chip, .tab-btn {
   gap: 4px;
 }
 
-/* ==========================================================================
-   FEED ITEMS & CARDS
-   ========================================================================== */
 .feed-list {
   display: flex;
   flex-direction: column;
@@ -785,7 +773,7 @@ button, a, .clickable, .filter-chip, .tab-btn {
 }
 
 .filter-pill {
-  padding: 6px 14px;
+  padding: 7px 14px;
   border-radius: var(--radius-pill);
   font-size: 12px;
   font-weight: 600;
@@ -796,6 +784,7 @@ button, a, .clickable, .filter-chip, .tab-btn {
   align-items: center;
   gap: 5px;
   transition: all 0.15s ease;
+  flex-shrink: 0;
 }
 
 .filter-pill.active {
@@ -811,7 +800,7 @@ button, a, .clickable, .filter-chip, .tab-btn {
 
 .filter-pill .pill-count {
   font-size: 10px;
-  opacity: 0.8;
+  opacity: 0.85;
 }
 
 /* Order Stack Cards */
@@ -820,13 +809,13 @@ button, a, .clickable, .filter-chip, .tab-btn {
   border: 1px solid var(--hairline-border);
   border-radius: var(--radius-lg);
   padding: 14px 16px;
-  margin-bottom: 10px;
+  margin-bottom: 12px;
   box-shadow: var(--shadow-subtle);
   transition: transform 0.15s ease, border-color 0.15s ease;
 }
 
 .order-card:active {
-  transform: scale(0.99);
+  transform: scale(0.98);
   border-color: var(--border-strong);
 }
 
@@ -864,11 +853,11 @@ button, a, .clickable, .filter-chip, .tab-btn {
 }
 
 .status-badge.pending { background: var(--status-pending-bg); color: var(--status-pending-text); }
-.status-badge.processing { background: var(--status-processing-bg); color: var(--status-processing-text); }
-.status-badge.booked { background: var(--status-booked-bg); color: var(--status-booked-text); }
+.status-badge.processing, .status-badge.processed { background: var(--status-processing-bg); color: var(--status-processing-text); }
+.status-badge.booked, .status-badge.awb_assigned { background: var(--status-booked-bg); color: var(--status-booked-text); }
 .status-badge.shipped { background: var(--status-shipped-bg); color: var(--status-shipped-text); }
 .status-badge.delivered { background: var(--status-delivered-bg); color: var(--status-delivered-text); }
-.status-badge.cancelled { background: var(--status-cancelled-bg); color: var(--status-cancelled-text); }
+.status-badge.cancelled, .status-badge.failed { background: var(--status-cancelled-bg); color: var(--status-cancelled-text); }
 
 .order-body-row {
   padding: 10px 0 6px 0;
@@ -944,9 +933,10 @@ button, a, .clickable, .filter-chip, .tab-btn {
   margin-top: 10px;
 }
 
-.btn-priority-dispatch {
+.btn-priority-dispatch,
+.btn-card-priority {
   flex: 1;
-  height: 40px;
+  height: 38px;
   border-radius: var(--radius-md);
   background: var(--primary-ink);
   color: #FFFFFF;
@@ -957,17 +947,20 @@ button, a, .clickable, .filter-chip, .tab-btn {
   align-items: center;
   justify-content: center;
   gap: 6px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
   box-shadow: 0 2px 8px rgba(28, 27, 26, 0.2);
   transition: transform 0.15s ease, background 0.15s ease;
 }
 
-.btn-priority-dispatch:active {
+.btn-priority-dispatch:active,
+.btn-card-priority:active {
   transform: scale(0.97);
   background: #000000;
 }
 
 .btn-card-secondary {
-  height: 40px;
+  height: 42px;
   padding: 0 14px;
   border-radius: var(--radius-md);
   background: var(--surface-low);
@@ -979,6 +972,7 @@ button, a, .clickable, .filter-chip, .tab-btn {
   align-items: center;
   justify-content: center;
   gap: 4px;
+  transition: transform 0.15s ease, background 0.15s ease;
 }
 
 .btn-card-secondary:active {
@@ -1133,7 +1127,7 @@ button, a, .clickable, .filter-chip, .tab-btn {
 }
 
 /* ==========================================================================
-   MODAL SHEETS & DIALOGS (Native iOS Spring Physics)
+   MODAL SHEETS & DIALOGS
    ========================================================================== */
 .modal-overlay {
   position: fixed;
@@ -1203,8 +1197,8 @@ button, a, .clickable, .filter-chip, .tab-btn {
 }
 
 .sheet-close-btn {
-  width: 30px;
-  height: 30px;
+  width: 32px;
+  height: 32px;
   border-radius: 50%;
   border: none;
   background: var(--surface-container);
@@ -1218,7 +1212,7 @@ button, a, .clickable, .filter-chip, .tab-btn {
   flex: 1;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
-  padding-bottom: 10px;
+  padding-bottom: 16px;
 }
 
 /* ==========================================================================
@@ -1299,7 +1293,7 @@ button, a, .clickable, .filter-chip, .tab-btn {
 }
 
 /* ==========================================================================
-   SMART iOS "ADD TO HOME SCREEN" INSTALLATION BANNER
+   SMART iOS INSTALL BANNER
    ========================================================================== */
 .ios-install-banner {
   position: fixed;
@@ -1319,7 +1313,7 @@ button, a, .clickable, .filter-chip, .tab-btn {
   display: flex;
   align-items: center;
   gap: 12px;
-  transform: translateY(120%);
+  transform: translateY(140%);
   transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
@@ -1366,7 +1360,7 @@ button, a, .clickable, .filter-chip, .tab-btn {
 }
 
 /* ==========================================================================
-   TOAST ALERTS
+   TOAST NOTIFICATIONS
    ========================================================================== */
 .toast-container {
   position: fixed;
@@ -1408,3 +1402,61 @@ button, a, .clickable, .filter-chip, .tab-btn {
 .toast.success .material-symbols-outlined { color: #10B981; }
 .toast.error .material-symbols-outlined { color: #EF4444; }
 .toast.info .material-symbols-outlined { color: var(--executive-gold); }
+
+/* ==========================================================================
+   FLOATING ACTION BUTTON (Add Order)
+   ========================================================================== */
+.btn-fab {
+  position: fixed;
+  bottom: calc(var(--bottom-nav-height) + var(--safe-bottom) + 16px);
+  right: 20px;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: var(--primary-ink);
+  color: var(--executive-gold);
+  border: 1px solid rgba(184, 134, 47, 0.4);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 95;
+  cursor: pointer;
+  transition: transform 0.15s ease, background-color 0.15s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.btn-fab:active {
+  transform: scale(0.92);
+  background: #000;
+}
+
+.card-action-btn-danger {
+  background: transparent;
+  border: none;
+  color: var(--status-cancelled-text);
+  padding: 4px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+}
+.card-action-btn-danger:active {
+  background: var(--status-cancelled-bg);
+}
+
+.card-awb-copy-btn {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  padding: 2px;
+  color: var(--meta-gray);
+  margin-left: 4px;
+}
+.card-awb-copy-btn:active {
+  color: var(--primary-ink);
+}
+

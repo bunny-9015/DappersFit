@@ -1,11 +1,12 @@
 // Dappersfit Logistics PWA - iOS Optimized Service Worker
-const CACHE_NAME = 'dappersfit-pwa-v1.0.0';
+const CACHE_NAME = 'dappersfit-pwa-v1.0.1';
 const STATIC_ASSETS = [
   './',
   './index.html',
   './styles.css',
   './app.js',
   './manifest.json',
+  './favicon.png',
   './apple-touch-icon.png',
   './icons/app_icon.png',
   './icons/avatar.png',
