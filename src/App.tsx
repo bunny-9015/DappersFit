@@ -493,13 +493,15 @@ export default function App() {
           awbCode: res.awbCode || selectedOrderForCheck.awbCode,
           courierName: res.courierName || selectedOrderForCheck.courierName,
           labelUrl: (res as any).labelUrl || res.order?.labelUrl || selectedOrderForCheck.labelUrl,
+          pickupLocation: res.pickupLocation || (res as any).order?.pickupLocation || pickupLocationName || selectedOrderForCheck.pickupLocation,
+          pickupAddress: res.order?.pickupAddress || pickupAddress || selectedOrderForCheck.pickupAddress,
           errorMessage: undefined,
           trackingHistory: [
             { 
               date: new Date().toISOString().replace('T', ' ').slice(0, 16), 
               status: actualStatus === 'shipped' ? 'Shipped' : 'Booked', 
-              location: `${settings.defaultPickupCity} Dispatch (MH)`, 
-              activity: `Shipment booked via ${res.courierName}. Shiprocket ID: ${res.shiprocketOrderId}` 
+              location: `${res.pickupLocation || pickupLocationName || settings.defaultPickupCity} (${pickupAddress?.city || 'MH'})`, 
+              activity: `Shipment booked via ${res.courierName}. AWB: ${res.awbCode || 'Assigned'}. Pickup Hub: ${res.pickupLocation || pickupLocationName || 'Registered Hub'}.` 
             }
           ]
         };

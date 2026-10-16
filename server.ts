@@ -218,21 +218,21 @@ let serverSettings = {
 // Registered fallback / simulation locations
 const SIMULATED_PICKUP_LOCATIONS = [
   {
-    name: 'Chennai Central Fulfillment Hub (Primary)',
-    pincode: '600002',
-    address: 'No-7 athipattan street, opp to omanthur hospital, Chintadripet, Chennai',
-    city: 'Chennai',
-    state: 'Tamil Nadu',
-    phone: '9982760943',
-    isLive: false
-  },
-  {
     name: 'Ashok og',
     pincode: '400001',
     address: 'Shop no.201 ground floor Sahara Market Mumbai S.s Musafir khana road',
     city: 'Mumbai',
     state: 'Maharashtra',
     phone: '9561047759',
+    isLive: false
+  },
+  {
+    name: 'Chennai Central Fulfillment Hub (Primary)',
+    pincode: '600002',
+    address: 'No-7 athipattan street, opp to omanthur hospital, Chintadripet, Chennai',
+    city: 'Chennai',
+    state: 'Tamil Nadu',
+    phone: '9982760943',
     isLive: false
   },
   {
@@ -374,7 +374,8 @@ async function validateAndResolvePickupLocation(
 
   // If no location was requested, only use default if legitimately specified/allowed
   if (allowDefaultFallback) {
-    const defaultLoc = registered[0];
+    const ashokDefault = registered.find(r => r.name.toLowerCase().includes('ashok'));
+    const defaultLoc = ashokDefault || registered[0];
     console.log(`[Shiprocket Pickup Resolution] Using legitimately specified default warehouse: "${defaultLoc.name}" (${defaultLoc.pincode})`);
     return { success: true, location: defaultLoc };
   }
@@ -391,7 +392,7 @@ async function getRegisteredPickupDetails(headers: any) {
   if (res.success && res.location) {
     return { pickupLocation: res.location.name, pickupPostcode: res.location.pincode };
   }
-  return { pickupLocation: 'dapperss', pickupPostcode: '600002' };
+  return { pickupLocation: 'Ashok og ', pickupPostcode: '400001' };
 }
 
 // Controlled retry helper to generate and verify shipping label PDF from Shiprocket
@@ -3906,7 +3907,7 @@ function formatShiprocketError(rawError: any): string {
 // API Route: Book Shiprocket order
 app.post('/api/shiprocket/order/book', async (req, res) => {
   clearShiprocketCache();
-  const { orderId, courier, assignedEmployeeId, deliveryAddress, pickupLocationName, pickupPostcode, pickupAddress } = req.body;
+  const { orderId, courier, assignedEmployeeId, deliveryAddress, pickupLocationName, pickupPostcode, pickupAddress, forceRebook } = req.body;
 
   const orderToBook = mockOrders.find(o => String(o.id) === String(orderId) || String(o.orderNumber) === String(orderId));
 
@@ -3923,8 +3924,16 @@ app.post('/api/shiprocket/order/book', async (req, res) => {
     });
   }
 
-  // Existing shipment guard: if the shipment is already booked, retrieve its existing label instead of booking it again
-  if (orderToBook.status === 'booked' && (orderToBook.shipmentId || orderToBook.shiprocketOrderId)) {
+  const requestedPickupName = (pickupLocationName || pickupAddress?.name || '').trim();
+  const existingPickup = (orderToBook.pickupLocation || '').trim();
+  const isChangingPickup = Boolean(
+    requestedPickupName && 
+    (!existingPickup || requestedPickupName.toLowerCase() !== existingPickup.toLowerCase())
+  );
+  const shouldForceRebook = Boolean(forceRebook) || isChangingPickup;
+
+  // Existing shipment guard: if the shipment is already booked and NOT changing pickup address or rebooking, retrieve its existing label
+  if (orderToBook.status === 'booked' && (orderToBook.shipmentId || orderToBook.shiprocketOrderId) && !shouldForceRebook) {
     console.log(`[Shiprocket Manual Booking] Order ${orderToBook.orderNumber || orderId} is already booked (Shipment ID: ${orderToBook.shipmentId}). Retrieving existing label...`);
     let labelUrl = orderToBook.labelUrl;
     let labelGenerated = !!labelUrl;
@@ -3972,9 +3981,6 @@ app.post('/api/shiprocket/order/book', async (req, res) => {
   if (deliveryAddress) {
     orderToBook.address = deliveryAddress;
   }
-
-  const requestedPickupName = pickupLocationName || pickupAddress?.name;
-  const requestedPickupPin = pickupPostcode || pickupAddress?.pincode;
 
   if (isLiveConfigured()) {
     try {
@@ -4561,7 +4567,7 @@ app.post('/api/orders/:orderId/set-status', async (req, res) => {
 // API Route: Priority Automated Courier Matching and Booking
 app.post('/api/shiprocket/order/priority-book', async (req, res) => {
   clearShiprocketCache();
-  const { orderId, assignedEmployeeId, pickupLocationName, pickupPostcode, pickupAddress } = req.body;
+  const { orderId, assignedEmployeeId, pickupLocationName, pickupPostcode, pickupAddress, forceRebook } = req.body;
   const orderToBook = mockOrders.find(o => String(o.id) === String(orderId) || String(o.orderNumber) === String(orderId));
 
   if (!orderToBook) {
@@ -4577,8 +4583,16 @@ app.post('/api/shiprocket/order/priority-book', async (req, res) => {
     });
   }
 
-  // Existing shipment guard: if the shipment is already booked, retrieve its existing label instead of booking it again
-  if (orderToBook.status === 'booked' && (orderToBook.shipmentId || orderToBook.shiprocketOrderId)) {
+  const requestedLocationName = (pickupLocationName || pickupAddress?.name || '').trim();
+  const existingPickup = (orderToBook.pickupLocation || '').trim();
+  const isChangingPickup = Boolean(
+    requestedLocationName && 
+    (!existingPickup || requestedLocationName.toLowerCase() !== existingPickup.toLowerCase())
+  );
+  const shouldForceRebook = Boolean(forceRebook) || isChangingPickup;
+
+  // Existing shipment guard: if the shipment is already booked and NOT changing pickup address or rebooking, retrieve its existing label
+  if (orderToBook.status === 'booked' && (orderToBook.shipmentId || orderToBook.shiprocketOrderId) && !shouldForceRebook) {
     console.log(`[Shiprocket Priority Booking] Order ${orderToBook.orderNumber || orderId} is already booked (Shipment ID: ${orderToBook.shipmentId}). Retrieving existing label...`);
     let labelUrl = orderToBook.labelUrl;
     let labelGenerated = !!labelUrl;
@@ -4622,19 +4636,11 @@ app.post('/api/shiprocket/order/priority-book', async (req, res) => {
 
   try {
     let couriersList = [];
-    const requestedLocationName = pickupLocationName || pickupAddress?.name || orderToBook.pickupLocation;
-    // FIX: NEVER silently substitute the default warehouse for priority booking.
-    // If no pickup location was specified (either in the request body or already saved on the order),
-    // reject the request and ask the user to select one via the modal first.
-    const allowDefault = false;
-
-    if (!requestedLocationName) {
-      return res.status(400).json({
-        success: false,
-        status: 'failed',
-        error: 'Pickup location must be specified before booking. Please open the courier selection modal and choose a registered pickup address.'
-      });
+    let targetLocationName = requestedLocationName || orderToBook.pickupLocation;
+    if (!targetLocationName || targetLocationName.toLowerCase().includes('dapper')) {
+      targetLocationName = 'Ashok og ';
     }
+    const allowDefault = false;
 
 
     // 1. Resolve and Validate Pickup Address
@@ -4643,7 +4649,7 @@ app.post('/api/shiprocket/order/priority-book', async (req, res) => {
       const headers = await getShiprocketAuthHeaders();
       const pickupRes = await validateAndResolvePickupLocation(
         headers,
-        requestedLocationName,
+        targetLocationName,
         pickupPostcode || pickupAddress?.pincode,
         pickupAddress,
         allowDefault
@@ -4684,7 +4690,7 @@ app.post('/api/shiprocket/order/priority-book', async (req, res) => {
       // Simulation pickup validation
       const simPickupRes = await validateAndResolvePickupLocation(
         null,
-        requestedLocationName,
+        targetLocationName,
         pickupPostcode || pickupAddress?.pincode,
         pickupAddress,
         allowDefault

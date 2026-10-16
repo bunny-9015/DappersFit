@@ -178,7 +178,8 @@ export class ShiprocketService {
           deliveryAddress,
           pickupLocationName,
           pickupPostcode,
-          pickupAddress
+          pickupAddress,
+          forceRebook: true
         })
       });
 
@@ -453,7 +454,8 @@ export class ShiprocketService {
           assignedEmployeeId,
           pickupLocationName,
           pickupPostcode,
-          pickupAddress
+          pickupAddress,
+          forceRebook: true
         })
       });
 

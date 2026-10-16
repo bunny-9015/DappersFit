@@ -96,7 +96,7 @@ export default function ServiceabilityModal({
   };
 
   const [pickupLocations, setPickupLocations] = useState<PickupLocation[]>([]);
-  const [selectedPickupName, setSelectedPickupName] = useState<string>('Dapers');
+  const [selectedPickupName, setSelectedPickupName] = useState<string>('Ashok og');
   const [loadingPickups, setLoadingPickups] = useState<boolean>(true);
   const [pickupError, setPickupError] = useState<string | null>(null);
   const [isCustomPickup, setIsCustomPickup] = useState<boolean>(false);
@@ -127,8 +127,8 @@ export default function ServiceabilityModal({
         setPickupLocations(res.addresses);
         
         let initialName = '';
-        // If order already had a pickup location selected, honor it first
-        if (order.pickupLocation) {
+        // If order already had a pickup location selected (and not legacy dapperss), honor it first
+        if (order.pickupLocation && !order.pickupLocation.toLowerCase().includes('dapper')) {
           const matchExisting = res.addresses.find(
             (addr: any) => addr.name.toLowerCase().trim() === (order.pickupLocation || '').toLowerCase().trim() ||
                            addr.name.toLowerCase().includes((order.pickupLocation || '').toLowerCase().trim())
@@ -137,11 +137,11 @@ export default function ServiceabilityModal({
         }
 
         if (!initialName) {
-          // Find if 'Dapers' (case-insensitive or exact match) is available in retrieved locations
-          const dapersLoc = res.addresses.find(
-            (addr: any) => addr.name.toLowerCase() === 'dapers' || addr.name.toLowerCase().includes('daper')
+          // Find if 'Ashok' is available in retrieved locations, otherwise use first
+          const ashokLoc = res.addresses.find(
+            (addr: any) => addr.name.toLowerCase().includes('ashok')
           );
-          initialName = dapersLoc ? dapersLoc.name : res.addresses[0].name;
+          initialName = ashokLoc ? ashokLoc.name : res.addresses[0].name;
         }
 
         setSelectedPickupName(initialName);
@@ -282,7 +282,7 @@ export default function ServiceabilityModal({
             <div className="flex items-center justify-between">
               <label className="text-xs font-sans font-bold text-amber-400 uppercase tracking-wider flex items-center gap-1.5">
                 <Warehouse className="w-4 h-4 text-amber-400" />
-                <span>1. Select Shiprocket Pickup Address (Default: 'Dapers')</span>
+                <span>1. Select Shiprocket Pickup Address (Default: 'Ashok og')</span>
               </label>
               {loadingPickups ? (
                 <span className="flex items-center gap-1 text-[10px] text-amber-400 font-mono">
@@ -339,12 +339,12 @@ export default function ServiceabilityModal({
                             <span className="font-sans font-bold text-slate-200 text-sm">{loc.name}</span>
                             {isAshok && (
                               <span className="text-[9px] bg-amber-500/20 border border-amber-500/30 text-amber-400 font-bold px-1.5 py-0.2 rounded">
-                                ASHOK
+                                DEFAULT
                               </span>
                             )}
                             {isDapers && (
                               <span className="text-[9px] bg-sky-500/20 border border-sky-500/30 text-sky-400 font-bold px-1.5 py-0.2 rounded">
-                                DEFAULT
+                                CHENNAI HUB
                               </span>
                             )}
                             {loc.isLive && (

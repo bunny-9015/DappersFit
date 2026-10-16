@@ -1287,12 +1287,18 @@
     showToast(`Booking Priority Air for ${order.orderNumber}...`, 'info');
 
     try {
+      const pName = (order.pickupLocation && !order.pickupLocation.toLowerCase().includes('dapper')) ? order.pickupLocation : 'Ashok og ';
+      const pPin = (order.pickupLocation && !order.pickupLocation.toLowerCase().includes('dapper')) ? (order.pickupAddress?.pincode || '400001') : '400001';
+
       const res = await fetch('/api/shiprocket/order/priority-book', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           orderId: order.id,
-          assignedEmployeeId: state.user?.id || 'admin'
+          assignedEmployeeId: state.user?.id || 'admin',
+          pickupLocationName: pName,
+          pickupPostcode: pPin,
+          forceRebook: true
         })
       });
 
@@ -1302,9 +1308,26 @@
           order.status = data.status || 'booked';
           order.awbCode = data.awbCode || order.awbCode || ('789' + Math.floor(Math.random() * 9000000 + 1000000));
           order.courierName = data.courierName || order.courierName || 'Blue Dart Express (Air)';
+          order.pickupLocation = data.pickupLocation || pName;
           order.rate = data.rate || order.rate || 68.0;
           order.labelUrl = data.labelUrl || order.labelUrl;
           if (data.order) Object.assign(order, data.order);
+
+          // Auto-trigger shipping label PDF download
+          if (order.labelUrl) {
+            try {
+              const downloadLink = document.createElement('a');
+              downloadLink.href = order.labelUrl;
+              downloadLink.download = `Dappersfit-Label-${order.orderNumber || order.id}.pdf`;
+              downloadLink.target = '_blank';
+              downloadLink.rel = 'noopener noreferrer';
+              document.body.appendChild(downloadLink);
+              downloadLink.click();
+              setTimeout(() => downloadLink.remove(), 1000);
+            } catch (dlErr) {
+              console.warn('Auto download error:', dlErr);
+            }
+          }
         } else {
           // Graceful fallback if simulated Shiprocket
           order.status = 'booked';
@@ -1731,7 +1754,7 @@
   }
 
   // --- Courier Booking Wizard with Live Shiprocket Integration ---
-  function openCourierBookingWizard(order) {
+  async function openCourierBookingWizard(order) {
     const sheet = document.getElementById('sheet-courier-booking');
     const container = document.getElementById('booking-sheet-content');
     if (!sheet || !container) return;
@@ -1742,9 +1765,59 @@
     const parcelWeight = order ? (order.weight || 0.5) : 0.5;
     const isCod = order ? (order.paymentMethod === 'COD') : true;
 
+    // Full registered pickup locations list
+    let registeredPickups = [
+      { name: "Ashok og ", pincode: "400001", address: "Sahara Market Mumbai (400001)" },
+      { name: "dapperss", pincode: "600002", address: "Chennai Central Hub (600002)" },
+      { name: "mahakal", pincode: "400004", address: "Rubberwala Mumbai (400004)" },
+      { name: "gopall", pincode: "400001", address: "Musafir Khana Mumbai (400001)" },
+      { name: "gopal", pincode: "400001", address: "Alsabha Market Mumbai (400001)" },
+      { name: "pankaj", pincode: "110005", address: "Karol Bagh Delhi (110005)" },
+      { name: "kenri ", pincode: "400004", address: "Platinum Mall Mumbai (400004)" },
+      { name: "shamil", pincode: "600002", address: "Chintadripet Chennai (600002)" },
+      { name: "ALEEM", pincode: "600021", address: "Old Washermanpet Chennai (600021)" },
+      { name: "DAPPER", pincode: "600021", address: "Old Washermanpet Chennai (600021)" },
+      { name: "dappers", pincode: "600021", address: "Washermanpet Chennai (600021)" }
+    ];
+
+    try {
+      const pRes = await fetch('/api/shiprocket/pickup-addresses');
+      if (pRes.ok) {
+        const pData = await pRes.json();
+        if (pData.success && Array.isArray(pData.addresses) && pData.addresses.length > 0) {
+          registeredPickups = pData.addresses.map(a => ({
+            name: a.name,
+            pincode: a.pincode,
+            address: (a.address || '') + (a.city ? ', ' + a.city : '') + ' (' + a.pincode + ')'
+          }));
+        }
+      }
+    } catch (_) {}
+
+    // Determine default selected pickup location (default to Ashok og, ignore legacy dapperss)
+    let defaultPickupName = "Ashok og ";
+    if (order && order.pickupLocation && !order.pickupLocation.toLowerCase().includes('dapper')) {
+      const matchExisting = registeredPickups.find(p => 
+        p.name.trim().toLowerCase() === order.pickupLocation.trim().toLowerCase() ||
+        p.name.toLowerCase().includes(order.pickupLocation.trim().toLowerCase())
+      );
+      if (matchExisting) defaultPickupName = matchExisting.name;
+    }
+
+    const pickupOptionsHtml = registeredPickups.map(p => {
+      const isSelected = p.name.trim().toLowerCase() === defaultPickupName.trim().toLowerCase();
+      return `<option value="${escapeHtml(p.name)}" data-pin="${escapeHtml(p.pincode)}" ${isSelected ? 'selected' : ''}>${escapeHtml(p.name.trim())} — ${escapeHtml(p.address)}</option>`;
+    }).join('');
+
     container.innerHTML = `
       <div id="booking-step-1">
-        <div style="font-size: 13px; font-weight: 700; color: var(--primary-ink); margin-bottom: 8px;">Step 1: Parcel Specs & Destination</div>
+        <div style="font-size: 13px; font-weight: 700; color: var(--primary-ink); margin-bottom: 8px;">Step 1: Select Pickup Hub & Parcel Specs</div>
+        <div class="form-group">
+          <label class="form-label" style="font-weight: 700; color: var(--executive-gold);">Shiprocket Pickup Address *</label>
+          <select id="wizard-pickup" class="form-control" style="font-weight: 600; border: 1.5px solid var(--executive-gold);">
+            ${pickupOptionsHtml}
+          </select>
+        </div>
         <div class="form-group">
           <label class="form-label">Delivery Pincode</label>
           <input type="text" id="wizard-pincode" class="form-control font-mono" value="${escapeHtml(destPincode)}">
@@ -1781,7 +1854,7 @@
           <div style="font-size: 13px; font-weight: 700; color: var(--primary-ink);">Step 2: Compare Courier Partners</div>
           <span class="pulse-dot" style="width: 6px; height: 6px;"></span>
         </div>
-        <div style="font-size: 11px; color: var(--body-slate); margin-bottom: 12px;">Live Shiprocket multi-carrier rates</div>
+        <div id="wizard-pickup-summary" style="font-size: 11px; color: var(--executive-gold); font-weight: 600; margin-bottom: 12px;"></div>
 
         <div id="wizard-couriers-list" style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px;">
           <!-- Dynamically populated from /api/shiprocket/serviceability -->
@@ -1799,6 +1872,9 @@
       const pcode = document.getElementById('wizard-pincode').value.trim();
       const wt = parseFloat(document.getElementById('wizard-weight').value) || 0.5;
       const pmode = document.getElementById('wizard-payment').value;
+      const pickupSelect = document.getElementById('wizard-pickup');
+      const pickupName = pickupSelect?.value || 'Ashok og ';
+      const pickupPin = pickupSelect?.selectedOptions[0]?.getAttribute('data-pin') || '400001';
 
       if (!pcode || pcode.length < 6) {
         showToast('Please enter a valid 6-digit delivery pincode', 'error');
@@ -1808,7 +1884,7 @@
       haptic('light');
       if (nextBtn) {
         nextBtn.disabled = true;
-        nextBtn.innerHTML = '<span class="material-symbols-outlined spinning">sync</span><span>Checking Shiprocket Rates...</span>';
+        nextBtn.innerHTML = '<span class="material-symbols-outlined spinning">sync</span><span>Calculating Routes...</span>';
       }
 
       let couriers = [];
@@ -1820,14 +1896,15 @@
             delivery_postcode: pcode,
             weight: wt,
             cod: pmode === 'COD',
-            pickup_postcode: '411037'
+            pickup_postcode: pickupPin,
+            pickup_location: pickupName
           })
         });
         if (sRes.ok) {
           const sData = await sRes.json();
           const rawCouriers = sData.couriers || (Array.isArray(sData) ? sData : (sData.data?.available_courier_companies || []));
           if (Array.isArray(rawCouriers) && rawCouriers.length > 0) {
-            couriers = rawCouriers.slice(0, 8).map(c => ({
+            couriers = rawCouriers.slice(0, 10).map(c => ({
               id: c.courierId || c.courier_company_id || c.id || 1,
               name: c.courierName || c.courier_name || 'Courier Partner',
               rate: parseFloat(c.rate || c.freight_charge || 68),
@@ -1843,11 +1920,17 @@
       // Fallback couriers if network offline or simulated
       if (couriers.length === 0) {
         couriers = [
-          { id: 1, name: 'Blue Dart Express (Air)', rate: 92, eta: 'Tomorrow by 2 PM', rating: '4.8', recommended: true },
-          { id: 2, name: 'Delhivery Surface', rate: 48, eta: '2 to 3 days', rating: '4.4', economy: true },
-          { id: 3, name: 'DTDC Express', rate: 68, eta: '1 to 2 days', rating: '4.2' },
-          { id: 4, name: 'Shadowfax Surface', rate: 45, eta: '2 to 4 days', rating: '4.1' }
+          { id: 55, name: 'Blue Dart Surface', rate: 85, eta: '2 to 3 days', rating: '4.8', recommended: true },
+          { id: 43, name: 'Delhivery Surface', rate: 68, eta: '2 to 3 days', rating: '4.5', economy: true },
+          { id: 10, name: 'Delhivery Air', rate: 110, eta: 'Tomorrow by 2 PM', rating: '4.7' },
+          { id: 3, name: 'DTDC Express', rate: 72, eta: '1 to 2 days', rating: '4.2' },
+          { id: 4, name: 'Shadowfax Surface', rate: 58, eta: '2 to 4 days', rating: '4.1' }
         ];
+      }
+
+      const summaryEl = document.getElementById('wizard-pickup-summary');
+      if (summaryEl) {
+        summaryEl.textContent = `📍 Pickup Hub: ${pickupName.trim()} (${pickupPin}) ➔ Destination: ${pcode}`;
       }
 
       const listContainer = document.getElementById('wizard-couriers-list');
@@ -1855,7 +1938,7 @@
         listContainer.innerHTML = couriers.map((c, idx) => `
           <label class="courier-partner-option" style="display: flex; align-items: center; justify-content: space-between; padding: 12px; border-radius: var(--radius-md); border: ${idx === 0 ? '2px solid var(--executive-gold)' : '1px solid var(--hairline-border)'}; background: var(--surface); cursor: pointer;">
             <div style="display: flex; align-items: center; gap: 10px;">
-              <input type="radio" name="selected_courier" value="${escapeHtml(c.name)}" data-rate="${c.rate}" ${idx === 0 ? 'checked' : ''} style="accent-color: var(--executive-gold);">
+              <input type="radio" name="selected_courier" value="${escapeHtml(c.name)}" data-id="${c.id}" data-rate="${c.rate}" ${idx === 0 ? 'checked' : ''} style="accent-color: var(--executive-gold);">
               <div>
                 <div style="font-size: 13px; font-weight: 700; color: var(--primary-ink);">${escapeHtml(c.name)}</div>
                 <div style="font-size: 11px; color: var(--meta-gray);">Est. Delivery: ${escapeHtml(c.eta)} • ★ ${c.rating || '4.5'}</div>
@@ -1863,7 +1946,7 @@
             </div>
             <div style="text-align: right;">
               <div class="font-mono" style="font-size: 15px; font-weight: 700; color: ${idx === 0 ? 'var(--executive-gold)' : 'var(--primary-ink)'};">₹${c.rate}</div>
-              ${idx === 0 ? '<span class="kpi-badge gold" style="font-size: 9px;">Recommended</span>' : (c.rate < 50 ? '<span class="kpi-badge green" style="font-size: 9px;">Economy</span>' : '')}
+              ${idx === 0 ? '<span class="kpi-badge gold" style="font-size: 9px;">Recommended</span>' : (c.rate < 70 ? '<span class="kpi-badge green" style="font-size: 9px;">Economy</span>' : '')}
             </div>
           </label>
         `).join('');
@@ -1886,47 +1969,87 @@
 
     document.getElementById('btn-wizard-confirm')?.addEventListener('click', async () => {
       const selectedRadio = document.querySelector('input[name="selected_courier"]:checked');
-      const selectedName = selectedRadio?.value || 'Blue Dart Express (Air)';
+      const selectedName = selectedRadio?.value || 'Delhivery Surface';
+      const selectedId = parseInt(selectedRadio?.getAttribute('data-id') || '43', 10);
       const selectedRate = parseFloat(selectedRadio?.getAttribute('data-rate')) || 68.0;
+
+      const pickupSelect = document.getElementById('wizard-pickup');
+      const chosenPickupName = pickupSelect?.value || 'Ashok og ';
+      const chosenPickupPin = pickupSelect?.selectedOptions[0]?.getAttribute('data-pin') || '400001';
 
       haptic('heavy');
       const confirmBtn = document.getElementById('btn-wizard-confirm');
       if (confirmBtn) {
         confirmBtn.disabled = true;
-        confirmBtn.innerHTML = '<span class="material-symbols-outlined spinning">sync</span><span>Dispatching...</span>';
+        confirmBtn.innerHTML = '<span class="material-symbols-outlined spinning">sync</span><span>Dispatching from ' + escapeHtml(chosenPickupName.trim()) + '...</span>';
       }
 
       if (order) {
         try {
-          const bRes = await fetch('/api/shiprocket/order/priority-book', {
+          // Manual Booking: invoke /api/shiprocket/order/book with specific courier and chosen pickup address
+          const bRes = await fetch('/api/shiprocket/order/book', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               orderId: order.id,
               assignedEmployeeId: state.user?.id || 'admin',
-              courierName: selectedName
+              courier: {
+                courierId: selectedId,
+                courierName: selectedName,
+                rate: selectedRate
+              },
+              pickupLocationName: chosenPickupName,
+              pickupPostcode: chosenPickupPin,
+              forceRebook: true
             })
           });
 
-          if (bRes.ok) {
-            const bData = await bRes.json();
+          const bData = await bRes.json();
+
+          if (bRes.ok && bData.success) {
             order.status = bData.status || 'booked';
             order.courierName = bData.courierName || selectedName;
-            order.awbCode = bData.awbCode || ('789' + Math.floor(Math.random() * 9000000 + 1000000));
-            order.rate = bData.rate || selectedRate;
+            order.awbCode = bData.awbCode;
+            order.shipmentId = bData.shipmentId;
+            order.shiprocketOrderId = bData.shiprocketOrderId;
+            order.pickupLocation = bData.pickupLocation || chosenPickupName;
+            order.pickupAddress = bData.order?.pickupAddress;
+            order.rate = selectedRate;
             order.labelUrl = bData.labelUrl || order.labelUrl;
             if (bData.order) Object.assign(order, bData.order);
+
+            // Auto-trigger shipping label PDF download
+            if (order.labelUrl) {
+              try {
+                const downloadLink = document.createElement('a');
+                downloadLink.href = order.labelUrl;
+                downloadLink.download = `Dappersfit-Label-${order.orderNumber || order.id}.pdf`;
+                downloadLink.target = '_blank';
+                document.body.appendChild(downloadLink);
+                downloadLink.click();
+                setTimeout(() => downloadLink.remove(), 1000);
+              } catch (dlErr) {
+                console.warn('Auto download error:', dlErr);
+              }
+            }
+
+            showToast(`✅ Booked via ${order.courierName} from ${chosenPickupName.trim()}! AWB: ${order.awbCode}`, 'success');
           } else {
-            order.status = 'booked';
-            order.courierName = selectedName;
-            order.rate = selectedRate;
-            order.awbCode = '789' + Math.floor(Math.random() * 9000000 + 1000000);
+            const errMsg = bData.error || `HTTP ${bRes.status}: Courier booking failed.`;
+            showToast(errMsg, 'error');
+            if (confirmBtn) {
+              confirmBtn.disabled = false;
+              confirmBtn.innerHTML = 'Retry Dispatch';
+            }
+            return;
           }
-        } catch (_) {
-          order.status = 'booked';
-          order.courierName = selectedName;
-          order.rate = selectedRate;
-          order.awbCode = '789' + Math.floor(Math.random() * 9000000 + 1000000);
+        } catch (err) {
+          showToast(`Booking error: ${err.message}`, 'error');
+          if (confirmBtn) {
+            confirmBtn.disabled = false;
+            confirmBtn.innerHTML = 'Retry Dispatch';
+          }
+          return;
         }
 
         try { localStorage.setItem(STORAGE_KEY_ORDERS, JSON.stringify(state.orders)); } catch (_) {}
@@ -1939,8 +2062,8 @@
         state.feed.unshift({
           id: 'f-wiz-' + Date.now(),
           employee: state.user?.name || 'Operator',
-          action: `Carrier Dispatched via ${order.courierName}`,
-          target: `${order.orderNumber} • AWB: ${order.awbCode}`,
+          action: `Carrier Dispatched from ${chosenPickupName.trim()}`,
+          target: `${order.orderNumber} • ${order.courierName} • AWB: ${order.awbCode}`,
           amount: formatCurrency(order.totalAmount),
           time: 'Just now',
           status: 'Booked'
@@ -1948,7 +2071,6 @@
 
         renderOrders();
         renderCockpit();
-        showToast(`Dispatched ${order.orderNumber} via ${order.courierName}! AWB: ${order.awbCode}`, 'success');
       }
 
       closeSheet('sheet-courier-booking');
