@@ -13,7 +13,17 @@ export async function downloadFileFromUrl(url: string, filename: string): Promis
   }
 
   try {
-    const response = await fetch(targetUrl);
+    // 35-second timeout: slightly longer than the server-side 30s proxy timeout
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 35000);
+
+    let response: Response;
+    try {
+      response = await fetch(targetUrl, { signal: controller.signal });
+    } finally {
+      clearTimeout(timeoutId);
+    }
+
     if (!response.ok) {
       throw new Error(`Download request failed with status: ${response.status}`);
     }
@@ -31,7 +41,13 @@ export async function downloadFileFromUrl(url: string, filename: string): Promis
     setTimeout(() => {
       URL.revokeObjectURL(blobUrl);
     }, 15000);
-  } catch (err) {
+  } catch (err: any) {
+    const isTimeout = err.name === 'AbortError' || err.message?.includes('aborted');
+    if (isTimeout) {
+      console.warn('[downloadFileFromUrl] Download timed out. Label URL may have expired:', targetUrl);
+      throw new Error('Label download timed out. The PDF URL may have expired — click the label button in the order row to regenerate it.');
+    }
+
     console.warn('[downloadFileFromUrl] Blob download failed, attempting window proxy:', err);
     
     // Direct link fallback

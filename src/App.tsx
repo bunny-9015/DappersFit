@@ -205,8 +205,14 @@ export default function App() {
           } catch {}
         }
         return true;
-      } catch (dlErr) {
-        console.error('Download error:', dlErr);
+      } catch (dlErr: any) {
+        const isTimeout = dlErr.name === 'AbortError' || (dlErr.message || '').includes('timed out') || (dlErr.message || '').includes('aborted');
+        if (isTimeout) {
+          triggerBanner('⚠️ Label PDF URL has expired. Click the 📄 label button on the order row to regenerate and download a fresh label.');
+        } else {
+          console.error('Download error:', dlErr);
+          triggerBanner(`⚠️ Label download failed: ${dlErr.message || 'Unknown error'}. Try clicking the label button on the order row.`);
+        }
         return false;
       }
     } else {
@@ -229,6 +235,13 @@ export default function App() {
     const nameTrimmed = (targetOrder.customerName || '').trim();
     if (!nameTrimmed || nameTrimmed.toLowerCase() === 'walkin customer' || nameTrimmed.toLowerCase() === 'walk-in customer') {
       triggerBanner("There is no customer name. Please provide a valid customer name before booking this order.");
+      return;
+    }
+
+    // FIX: If no pickup location is saved on the order, open ServiceabilityModal so the
+    // user explicitly selects one. This prevents silent defaulting to the wrong warehouse.
+    if (!targetOrder.pickupLocation && !targetOrder.pickupAddress?.name) {
+      setSelectedOrderForCheck(targetOrder);
       return;
     }
 

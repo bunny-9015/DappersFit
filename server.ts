@@ -338,18 +338,38 @@ async function validateAndResolvePickupLocation(
       }
     }
 
+    // 6. Match by exact pincode if only one registered warehouse is in that pincode or prefer specific names (e.g. Ashok in 400001)
+    if (!match && reqPin) {
+      const pinMatches = registered.filter(r => r.pincode === reqPin);
+      if (pinMatches.length === 1) {
+        match = pinMatches[0];
+      } else if (pinMatches.length > 1) {
+        match = pinMatches.find(r => r.name.toLowerCase().includes('ashok')) || pinMatches[0];
+      }
+    }
+
     if (match) {
-      console.log(`[Shiprocket Pickup Resolution] Matched requested "${reqName}" to registered location: "${match.name}" (${match.pincode})`);
+      console.log(`[Shiprocket Pickup Resolution] Matched requested "${reqName}" (PIN: ${reqPin}) to registered location: "${match.name}" (${match.pincode})`);
       return { success: true, location: match };
     }
 
     // If the selected location is invalid, stop the booking and display a clear error.
     // NEVER silently substitute the default warehouse!
-    console.error(`[Shiprocket Pickup Resolution Error] Requested "${reqName}" is not registered in Shiprocket account.`);
+    console.error(`[Shiprocket Pickup Resolution Error] Requested "${reqName}" (PIN: ${reqPin}) is not registered in Shiprocket account.`);
     return {
       success: false,
-      error: `Selected pickup location "${reqName}" is not registered or active in your Shiprocket account. Please select a valid registered pickup location.`
+      error: `Selected pickup location "${reqName}" (PIN: ${reqPin || 'N/A'}) is not registered or active in your Shiprocket account. Please select a valid registered pickup location.`
     };
+  }
+
+  // If name was empty but pincode was provided, resolve by pincode
+  if (reqPin) {
+    const pinMatches = registered.filter(r => r.pincode === reqPin);
+    if (pinMatches.length > 0) {
+      const match = pinMatches.find(r => r.name.toLowerCase().includes('ashok')) || pinMatches[0];
+      console.log(`[Shiprocket Pickup Resolution] Matched requested PIN "${reqPin}" to registered location: "${match.name}" (${match.pincode})`);
+      return { success: true, location: match };
+    }
   }
 
   // If no location was requested, only use default if legitimately specified/allowed
@@ -4603,7 +4623,19 @@ app.post('/api/shiprocket/order/priority-book', async (req, res) => {
   try {
     let couriersList = [];
     const requestedLocationName = pickupLocationName || pickupAddress?.name || orderToBook.pickupLocation;
-    const allowDefault = !requestedLocationName; // Only default if order has no specified pickup location
+    // FIX: NEVER silently substitute the default warehouse for priority booking.
+    // If no pickup location was specified (either in the request body or already saved on the order),
+    // reject the request and ask the user to select one via the modal first.
+    const allowDefault = false;
+
+    if (!requestedLocationName) {
+      return res.status(400).json({
+        success: false,
+        status: 'failed',
+        error: 'Pickup location must be specified before booking. Please open the courier selection modal and choose a registered pickup address.'
+      });
+    }
+
 
     // 1. Resolve and Validate Pickup Address
     let resolvedPickupLocation: any;
@@ -5281,7 +5313,17 @@ app.get('/api/shiprocket/download-live-pdf', async (req, res) => {
 
   try {
     console.log(`[Proxy PDF Download] Fetching live PDF from: ${pdfUrl}`);
-    const response = await fetch(pdfUrl);
+    // Add a 30-second timeout to prevent hanging on slow or expired CDN URLs
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000);
+
+    let response: Response;
+    try {
+      response = await fetch(pdfUrl, { signal: controller.signal });
+    } finally {
+      clearTimeout(timeoutId);
+    }
+
     if (!response.ok) {
       throw new Error(`Failed to fetch PDF from remote server. Status: ${response.status}`);
     }
@@ -5291,10 +5333,17 @@ app.get('/api/shiprocket/download-live-pdf', async (req, res) => {
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     res.send(Buffer.from(buffer));
   } catch (err: any) {
-    console.error('[Proxy PDF Download] Error fetching or streaming PDF:', err.message || err);
-    res.status(500).send(`Failed to download live PDF: ${err.message}`);
+    const isTimeout = err.name === 'AbortError' || err.message?.includes('aborted');
+    if (isTimeout) {
+      console.error('[Proxy PDF Download] Request timed out fetching PDF from CDN:', pdfUrl);
+      res.status(504).send('PDF download timed out. The shipping label URL may have expired. Please regenerate from the order panel.');
+    } else {
+      console.error('[Proxy PDF Download] Error fetching or streaming PDF:', err.message || err);
+      res.status(500).send(`Failed to download live PDF: ${err.message}`);
+    }
   }
 });
+
 
 // API Route: Print tax invoice (Simulates PDF URL retrieval)
 app.post('/api/shiprocket/invoice', async (req, res) => {
