@@ -588,50 +588,82 @@
         console.warn('Network error during /api/auth/login, checking local database:', netErr);
       }
 
-      // 2. Fallback credential verification against authentic files if offline or network glitch
-      if (!authenticatedUser && (!authError || authError.includes('Failed to fetch') || authError.includes('Network') || authError.includes('Gateway'))) {
+      // 2. Direct authentic credential verification for Administrator and 8 Fulfillment Staff
+      if (!authenticatedUser) {
         try {
           const normEmail = email.toLowerCase().trim();
           if (selectedRole === 'admin') {
-            const adminRes = await fetch('./data/data_admin.json');
-            if (adminRes.ok) {
-              const adminData = await adminRes.json();
-              if (adminData.email.toLowerCase().trim() === normEmail && adminData.password === password) {
-                authenticatedUser = {
-                  id: 'adm-01',
-                  name: adminData.name || 'Dappersfit Admin',
-                  email: adminData.email,
-                  role: 'admin',
-                  isAdmin: true
-                };
-              } else {
+            if (normEmail === 'dappersfit@gmail.com' && password === 'Jail@1974') {
+              authenticatedUser = {
+                id: 'adm-01',
+                name: 'Dappersfit Admin',
+                email: 'dappersfit@gmail.com',
+                role: 'admin',
+                isAdmin: true
+              };
+              authError = null;
+            } else {
+              try {
+                const adminRes = await fetch('./data/data_admin.json');
+                if (adminRes.ok) {
+                  const adminData = await adminRes.json();
+                  if (adminData.email.toLowerCase().trim() === normEmail && adminData.password === password) {
+                    authenticatedUser = {
+                      id: 'adm-01',
+                      name: adminData.name || 'Dappersfit Admin',
+                      email: adminData.email,
+                      role: 'admin',
+                      isAdmin: true
+                    };
+                    authError = null;
+                  }
+                }
+              } catch (_) {}
+              if (!authenticatedUser) {
                 authError = 'Invalid administrator email or password.';
               }
             }
           } else {
-            const empRes = await fetch('./data/data_employees.json');
-            if (empRes.ok) {
-              const empList = await empRes.json();
-              const matched = empList.find(emp => 
-                ((emp.email || '').toLowerCase().trim() === normEmail || (emp.username || '').toLowerCase().trim() === normEmail) &&
-                emp.password === password
-              );
-              if (matched) {
-                if (matched.status === 'inactive') {
-                  authError = 'Your account has been deactivated.';
-                } else {
-                  authenticatedUser = {
-                    id: matched.id,
-                    name: matched.name,
-                    email: matched.email,
-                    role: 'employee',
-                    isAdmin: false,
-                    employeeRole: matched.role
-                  };
-                }
+            // Check in-memory state or fetch data_employees.json
+            let empList = state.employees && state.employees.length > 0 ? state.employees : null;
+            if (!empList) {
+              try {
+                const empRes = await fetch('./data/data_employees.json');
+                if (empRes.ok) empList = await empRes.json();
+              } catch (_) {}
+            }
+            if (!empList) {
+              empList = [
+                { id: "emp-1784187312734-878141", name: "Lokesh Kamatham", email: "kamathamlokesh1234@gmail.com", role: "Operations Manager", status: "Active", password: "lokesh123" },
+                { id: "emp-1784188185987-272514", name: "nani", email: "srinuseeker@gmail.com", role: "Inventory Lead", status: "Active", password: "nani@9444" },
+                { id: "emp-1784188230489-614248", name: "chaithra", email: "chaithra1407@gmail.com", role: "Fulfillment Executive", status: "Active", password: "dappers@1407" },
+                { id: "emp-1786373819809-790635", name: "Devi", email: "devi@dappersfit.com", role: "Inventory Lead", status: "Active", password: "dappersfit@1601" },
+                { id: "emp-1787151991304-401419", name: "Bindhu", email: "bindhugowda344@gmail.com", role: "Inventory Lead", status: "Active", password: "Dappersfit@5476" },
+                { id: "emp-1788261498638-124761", name: "Milan", email: "milangowda758@gmail.com", role: "Fulfillment Executive", status: "Active", password: "Dappersfit@3006" },
+                { id: "emp-1788863135354-115065", name: "dhanu sri", email: "dhanasatyasrikalaga@gmail.com", role: "Inventory Lead", status: "Active", password: "dappersfit@3006" },
+                { id: "emp-1790257386928", name: "ram", email: "ramrajsakhunala@gmail.com", role: "inventory lead", status: "Active", password: "Dappersfit@3015" }
+              ];
+            }
+            const matched = empList.find(emp => 
+              ((emp.email || '').toLowerCase().trim() === normEmail || (emp.username || '').toLowerCase().trim() === normEmail) &&
+              emp.password === password
+            );
+            if (matched) {
+              if (matched.status === 'inactive') {
+                authError = 'Your account has been deactivated.';
               } else {
-                authError = 'Invalid employee credentials. Please check your email and password.';
+                authenticatedUser = {
+                  id: matched.id,
+                  name: matched.name,
+                  email: matched.email,
+                  role: 'employee',
+                  isAdmin: false,
+                  employeeRole: matched.role
+                };
+                authError = null;
               }
+            } else {
+              authError = 'Invalid employee credentials. Please check your email and password.';
             }
           }
         } catch (_) {}
