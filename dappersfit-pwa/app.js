@@ -25,7 +25,7 @@
         return null;
       }
     })(),
-    baseUrl: 'https://dappersfit.onrender.com',
+    baseUrl: 'http://127.0.0.1:3000',
     activeTab: 'cockpit',
     orders: [],
     visibleOrdersLimit: 35,
@@ -43,6 +43,94 @@
     selectedOrder: null,
     isRefreshing: false
   };
+
+  // --- Dynamic Active Backend Resolver & Universal apiFetch (iOS / Localhost Parity) ---
+  let resolvedApiBase = '';
+  async function resolveApiBase() {
+    if (resolvedApiBase) return resolvedApiBase;
+
+    const origin = (typeof window !== 'undefined' && window.location && window.location.origin) ? window.location.origin : '';
+    const hostname = (typeof window !== 'undefined' && window.location && window.location.hostname) ? window.location.hostname : 'localhost';
+
+    const candidates = [];
+    if (origin && origin.startsWith('http')) {
+      candidates.push(origin);
+    }
+    candidates.push('http://127.0.0.1:3000');
+    if (hostname && hostname !== '127.0.0.1' && hostname !== 'localhost') {
+      candidates.push(`http://${hostname}:3000`);
+    }
+    candidates.push('https://dappersfit.onrender.com');
+
+    for (const base of candidates) {
+      try {
+        const controller = new AbortController();
+        const tid = setTimeout(() => controller.abort(), 1800);
+        const res = await fetch(`${base}/api/shiprocket/wallet/balance-details`, {
+          method: 'GET',
+          cache: 'no-store',
+          signal: controller.signal
+        });
+        clearTimeout(tid);
+        if (res.ok || res.status === 401 || res.status === 403 || res.status === 200) {
+          resolvedApiBase = base;
+          state.baseUrl = base;
+          return resolvedApiBase;
+        }
+      } catch (_) {}
+    }
+
+    resolvedApiBase = origin || 'http://127.0.0.1:3000';
+    state.baseUrl = resolvedApiBase;
+    return resolvedApiBase;
+  }
+
+  async function apiFetch(path, options = {}) {
+    const base = await resolveApiBase();
+    const cleanPath = path.startsWith('/') ? path : '/' + path;
+    const url = path.startsWith('http') ? path : `${base}${cleanPath}`;
+    return fetch(url, options);
+  }
+
+  // --- Courier Priority Scoring (Matches Backend & Flutter CourierSelector) ---
+  function isSpecialSku(itemName) {
+    if (!itemName) return false;
+    const s = String(itemName).toLowerCase();
+    return (
+      s.includes('wg') ||
+      s.includes('rc') ||
+      s.includes('pro') ||
+      s.includes('water gun') ||
+      s.includes('projector')
+    );
+  }
+
+  function getCourierPriorityScore(courierName, isException = false) {
+    const name = (courierName || '').toLowerCase();
+    
+    if (isException) {
+      // Exception: DAPPERS -> SURFACE_2KG_EXCEPTION (Delhivery Surface 2kg / Blue Dart 2kg) -> INDIA_POST
+      if (name.includes('dapper')) return 1;
+      if (name.includes('surface') && (name.includes('2kg') || name.includes('2 kg') || name.includes('delhivery') || name.includes('bluedart') || name.includes('blue dart'))) return 2;
+      if (name.includes('india post') || name.includes('speed post')) return 3;
+      return 100;
+    }
+
+    // Standard Priority: DAPPERS -> BLUEDART_AIR -> BLUEDART_SURFACE -> DELIVERY_AIR -> DELIVERY_SURFACE -> INDIA_POST
+    if (name.includes('dapper')) return 1;
+    if (name.includes('blue dart') || name.includes('bluedart')) {
+      if (name.includes('air') || name.includes('express')) return 2;
+      return 3; // Blue Dart Surface
+    }
+    if (name.includes('delhivery')) {
+      if (name.includes('air') || name.includes('express')) return 4;
+      return 5; // Delhivery Surface
+    }
+    if (name.includes('india post') || name.includes('speed post')) return 6;
+    if (name.includes('shadowfax')) return 7;
+    if (name.includes('dtdc')) return 8;
+    return 50;
+  }
 
   // --- iOS Haptic Simulation ---
   function haptic(intensity = 'light') {
@@ -258,7 +346,7 @@
       try {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 15000);
-        const ordersRes = await fetch(`/api/orders?_v=${Date.now()}`, {
+        const ordersRes = await apiFetch(`/api/orders?_v=${Date.now()}`, {
           cache: 'no-store',
           signal: controller.signal
         });
@@ -309,7 +397,7 @@
       try {
         let repLoaded = false;
         try {
-          const liveRepRes = await fetch(`/api/replacements?_v=${Date.now()}`, { cache: 'no-store' });
+          const liveRepRes = await apiFetch(`/api/replacements?_v=${Date.now()}`, { cache: 'no-store' });
           if (liveRepRes.ok) {
             const liveRep = await liveRepRes.json();
             const list = Array.isArray(liveRep) ? liveRep : (liveRep.replacements || []);
@@ -358,7 +446,7 @@
       try {
         let prodLoaded = false;
         try {
-          const liveProd = await fetch(`/api/products?_v=${Date.now()}`, { cache: 'no-store' });
+          const liveProd = await apiFetch(`/api/products?_v=${Date.now()}`, { cache: 'no-store' });
           if (liveProd.ok) {
             const list = await liveProd.json();
             if (Array.isArray(list) && list.length > 0) {
@@ -381,7 +469,7 @@
       try {
         let custLoaded = false;
         try {
-          const liveCust = await fetch(`/api/customers?_v=${Date.now()}`, { cache: 'no-store' });
+          const liveCust = await apiFetch(`/api/customers?_v=${Date.now()}`, { cache: 'no-store' });
           if (liveCust.ok) {
             const list = await liveCust.json();
             if (Array.isArray(list) && list.length > 0) {
@@ -404,7 +492,7 @@
       try {
         let walLoaded = false;
         try {
-          const walApiRes = await fetch('/api/shiprocket/wallet/balance-details', { cache: 'no-store' });
+          const walApiRes = await apiFetch('/api/shiprocket/wallet/balance-details', { cache: 'no-store' });
           if (walApiRes.ok) {
             const rawWal = await walApiRes.json();
             if (rawWal && rawWal.available_balance !== undefined) {
@@ -425,10 +513,24 @@
 
       // 6. Fetch Real Employees
       try {
-        const empRes = await fetch(`./data/data_employees.json?_v=${Date.now()}`, { cache: 'no-store' });
-        if (empRes.ok) {
-          const rawEmp = await empRes.json();
-          if (Array.isArray(rawEmp)) state.employees = rawEmp;
+        let empLoaded = false;
+        try {
+          const liveEmpRes = await apiFetch('/api/employees', { cache: 'no-store' });
+          if (liveEmpRes.ok) {
+            const list = await liveEmpRes.json();
+            if (Array.isArray(list) && list.length > 0) {
+              state.employees = list;
+              empLoaded = true;
+            }
+          }
+        } catch (_) {}
+
+        if (!empLoaded) {
+          const empRes = await fetch(`./data/data_employees.json?_v=${Date.now()}`, { cache: 'no-store' });
+          if (empRes.ok) {
+            const rawEmp = await empRes.json();
+            if (Array.isArray(rawEmp)) state.employees = rawEmp;
+          }
         }
       } catch (_) {}
 
@@ -573,7 +675,7 @@
 
       // 1. Authenticate via live backend API /api/auth/login
       try {
-        const response = await fetch('/api/auth/login', {
+        const response = await apiFetch('/api/auth/login', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ email, password, role: selectedRole })
@@ -1278,6 +1380,95 @@
     showToast(`Exported ${state.orders.length} orders to CSV`, 'success');
   }
 
+  // --- High-Fidelity Shipping Label Modal (Parity with React and Mobile App) ---
+  function showShippingLabelModal(order) {
+    if (!order) return;
+    haptic('medium');
+
+    const labelUrl = order.labelUrl || '';
+    const awb = order.awbCode || '7892401824';
+    const courier = order.courierName || 'Blue Dart Express (Air)';
+    const orderNo = order.orderNumber || order.id;
+    const destName = order.customerName || 'Customer';
+    const destAddr = (order.address?.address || '') + ', ' + (order.address?.city || '') + ' - ' + (order.address?.pincode || '');
+    const destPhone = order.address?.phone || '';
+    const codAmount = (order.paymentMethod === 'COD' || order.paymentMethod === 'Cash On Delivery (COD)')
+      ? formatCurrency(order.totalAmount)
+      : 'PREPAID';
+
+    const pdfEmbedHtml = labelUrl ? `
+      <div style="margin-bottom: 12px; border-radius: 8px; overflow: hidden; border: 1px solid var(--hairline-border); background: #f9f9f9;">
+        <div style="padding: 8px 12px; background: var(--surface-low); font-size: 11px; display: flex; justify-content: space-between; align-items: center;">
+          <span style="font-weight: 700; color: var(--primary-ink);">Official Courier Shipping Label</span>
+          <a href="${labelUrl}" target="_blank" download="Label-${orderNo}.pdf" class="btn-card-secondary" style="height: 26px; padding: 0 8px; font-size: 11px; text-decoration: none;">
+            <span class="material-symbols-outlined" style="font-size: 14px;">open_in_new</span>
+            <span>Open PDF</span>
+          </a>
+        </div>
+      </div>
+    ` : '';
+
+    openSubmoduleSheet(`Shipping Label — ${orderNo}`, `
+      <div style="display: flex; flex-direction: column; gap: 12px;">
+        <div style="background: var(--surface-low); padding: 8px 12px; border-radius: var(--radius-sm); border: 1px solid var(--executive-gold); display: flex; align-items: center; justify-content: space-between;">
+          <div style="display: flex; align-items: center; gap: 6px;">
+            <span class="material-symbols-outlined" style="color: #10B981; font-size: 18px;">check_circle</span>
+            <span style="font-size: 12px; font-weight: 700; color: var(--primary-ink);">Priority Booked Successfully</span>
+          </div>
+          <span class="status-badge booked" style="font-size: 10px;">Booked</span>
+        </div>
+
+        ${pdfEmbedHtml}
+
+        <!-- Thermal / Air Cargo Label Rendering -->
+        <div style="background: #FFFFFF; border: 2px solid #111827; border-radius: 8px; padding: 14px; font-family: monospace; color: #111827; box-shadow: 0 4px 12px rgba(0,0,0,0.08);">
+          <div style="display: flex; justify-content: space-between; border-bottom: 2px solid #111827; padding-bottom: 8px;">
+            <div>
+              <div style="font-size: 15px; font-weight: 900; letter-spacing: 0.5px;">DAPPERSFIT LOGISTICS</div>
+              <div style="font-size: 10px; color: #4B5563; font-weight: 700;">PRIORITY AIR DISPATCH • ROUTE AUTO</div>
+            </div>
+            <div style="text-align: right;">
+              <div style="font-size: 13px; font-weight: 800; color: #000;">${escapeHtml(courier)}</div>
+              <div style="font-size: 11px; font-weight: 800; color: #B45309;">${escapeHtml(codAmount)}</div>
+            </div>
+          </div>
+
+          <div style="text-align: center; padding: 12px 0; border-bottom: 2px solid #111827;">
+            <div style="font-size: 10px; font-weight: 700; letter-spacing: 1px; color: #4B5563;">TRACKING / AWB CODE</div>
+            <div style="font-size: 22px; font-weight: 900; letter-spacing: 3px; margin: 4px 0;">${escapeHtml(awb)}</div>
+            <div style="font-size: 11px; letter-spacing: 2px; font-weight: bold; opacity: 0.7;">||||| | |||||| ||| ||||||| |||| ||||||</div>
+            <div style="font-size: 10px; color: #4B5563; margin-top: 2px;">ORDER: ${escapeHtml(orderNo)}</div>
+          </div>
+
+          <div style="padding-top: 10px; font-size: 11px; line-height: 1.45;">
+            <div style="font-weight: 900; font-size: 10px; color: #6B7280; margin-bottom: 2px;">DELIVERY DESTINATION:</div>
+            <div style="font-size: 13px; font-weight: 800;">${escapeHtml(destName)}</div>
+            <div style="color: #374151;">${escapeHtml(destAddr)}</div>
+            <div style="margin-top: 4px; font-weight: 700;">Phone: +91 ${escapeHtml(destPhone)}</div>
+          </div>
+
+          <div style="margin-top: 10px; padding-top: 8px; border-top: 1px dashed #9CA3AF; display: flex; justify-content: space-between; font-size: 10px; color: #6B7280;">
+            <span>Pickup Hub: Ashok og (Mumbai 400001)</span>
+            <span>Wt: ${order.weight || 0.5} kg</span>
+          </div>
+        </div>
+
+        <div style="display: flex; gap: 8px; margin-top: 4px;">
+          ${labelUrl ? `
+            <a href="${labelUrl}" target="_blank" class="btn-gold-primary" style="flex: 1; text-decoration: none; display: flex; align-items: center; justify-content: center; gap: 6px;">
+              <span class="material-symbols-outlined">download</span>
+              <span>Download PDF Label</span>
+            </a>
+          ` : ''}
+          <button type="button" class="btn-ink-primary" style="flex: 1;" onclick="window.print()">
+            <span class="material-symbols-outlined">print</span>
+            <span>Print Label</span>
+          </button>
+        </div>
+      </div>
+    `);
+  }
+
   // --- Priority Dispatch Action (Calls Live Backend API with Fallback) ---
   async function triggerPriorityDispatch(orderId) {
     const order = state.orders.find(o => o.id === orderId);
@@ -1290,7 +1481,7 @@
       const pName = (order.pickupLocation && !order.pickupLocation.toLowerCase().includes('dapper')) ? order.pickupLocation : 'Ashok og ';
       const pPin = (order.pickupLocation && !order.pickupLocation.toLowerCase().includes('dapper')) ? (order.pickupAddress?.pincode || '400001') : '400001';
 
-      const res = await fetch('/api/shiprocket/order/priority-book', {
+      const res = await apiFetch('/api/shiprocket/order/priority-book', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1366,6 +1557,12 @@
     renderOrders();
     renderCockpit();
     showToast(`Booked ${order.orderNumber}! AWB: ${order.awbCode}`, 'success');
+
+    // Automatically display the correct order details and generated shipping label
+    openOrderDetailSheet(order.id);
+    setTimeout(() => {
+      showShippingLabelModal(order);
+    }, 380);
   }
 
   // --- Delete Order Action (Admin) ---
@@ -1673,33 +1870,7 @@
     });
 
     document.getElementById('btn-view-label')?.addEventListener('click', () => {
-      haptic();
-      openSubmoduleSheet(`Shipping Label — ${order.orderNumber}`, `
-        <div style="background:#fff; border:2px dashed #000; border-radius:8px; padding:16px; font-family:monospace; color:#000;">
-          <div style="display:flex; justify-content:space-between; border-bottom:2px solid #000; padding-bottom:8px;">
-            <div>
-              <div style="font-size:16px; font-weight:bold;">DAPPERSFIT LOGISTICS</div>
-              <div style="font-size:10px;">AIR CARRIER EXPEDITED</div>
-            </div>
-            <div style="text-align:right;">
-              <div style="font-size:14px; font-weight:bold;">${escapeHtml(order.courierName || 'Blue Dart')}</div>
-              <div style="font-size:10px;">${escapeHtml(order.paymentMethod || 'COD')}</div>
-            </div>
-          </div>
-          <div style="text-align:center; padding:16px 0; border-bottom:2px solid #000;">
-            <div style="font-size:11px;">TRACKING AWB</div>
-            <div style="font-size:20px; font-weight:bold; letter-spacing:2px;">${escapeHtml(order.awbCode || '7892401824')}</div>
-            <div style="font-size:9px; margin-top:4px;">||||| | |||||| ||| ||||||| |||| ||||||</div>
-          </div>
-          <div style="padding-top:10px; font-size:11px; line-height:1.4;">
-            <strong>SHIP TO:</strong><br>
-            ${escapeHtml(order.customerName)}<br>
-            ${escapeHtml(order.address?.address || '')}, ${escapeHtml(order.address?.city || '')} - ${escapeHtml(order.address?.pincode || '')}<br>
-            Phone: ${escapeHtml(order.address?.phone || '')}
-          </div>
-        </div>
-        <button type="button" class="btn-ink-primary" style="margin-top:14px;" onclick="window.print()">Print Shipping Label</button>
-      `);
+      showShippingLabelModal(order);
     });
 
     document.getElementById('btn-view-invoice')?.addEventListener('click', () => {
@@ -1736,7 +1907,7 @@
 
       // Try sending to backend API
       try {
-        await fetch(`/api/orders/${encodeURIComponent(order.id)}/set-status`, {
+        await apiFetch(`/api/orders/${encodeURIComponent(order.id)}/set-status`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ status: newStatus })
@@ -1753,7 +1924,7 @@
     openSheet('sheet-order-detail');
   }
 
-  // --- Courier Booking Wizard with Live Shiprocket Integration ---
+  // --- Courier Booking Wizard with Live Shiprocket Integration (Manual Rocket Icon Booking) ---
   async function openCourierBookingWizard(order) {
     const sheet = document.getElementById('sheet-courier-booking');
     const container = document.getElementById('booking-sheet-content');
@@ -1781,7 +1952,7 @@
     ];
 
     try {
-      const pRes = await fetch('/api/shiprocket/pickup-addresses');
+      const pRes = await apiFetch('/api/shiprocket/pickup-addresses');
       if (pRes.ok) {
         const pData = await pRes.json();
         if (pData.success && Array.isArray(pData.addresses) && pData.addresses.length > 0) {
@@ -1851,7 +2022,7 @@
 
       <div id="booking-step-2" style="display: none;">
         <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;">
-          <div style="font-size: 13px; font-weight: 700; color: var(--primary-ink);">Step 2: Compare Courier Partners</div>
+          <div style="font-size: 13px; font-weight: 700; color: var(--primary-ink);">Step 2: Compare Courier Partners (Priority Order)</div>
           <span class="pulse-dot" style="width: 6px; height: 6px;"></span>
         </div>
         <div id="wizard-pickup-summary" style="font-size: 11px; color: var(--executive-gold); font-weight: 600; margin-bottom: 12px;"></div>
@@ -1889,7 +2060,7 @@
 
       let couriers = [];
       try {
-        const sRes = await fetch('/api/shiprocket/serviceability', {
+        const sRes = await apiFetch('/api/shiprocket/serviceability', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -1904,7 +2075,7 @@
           const sData = await sRes.json();
           const rawCouriers = sData.couriers || (Array.isArray(sData) ? sData : (sData.data?.available_courier_companies || []));
           if (Array.isArray(rawCouriers) && rawCouriers.length > 0) {
-            couriers = rawCouriers.slice(0, 10).map(c => ({
+            couriers = rawCouriers.slice(0, 15).map(c => ({
               id: c.courierId || c.courier_company_id || c.id || 1,
               name: c.courierName || c.courier_name || 'Courier Partner',
               rate: parseFloat(c.rate || c.freight_charge || 68),
@@ -1920,13 +2091,23 @@
       // Fallback couriers if network offline or simulated
       if (couriers.length === 0) {
         couriers = [
-          { id: 55, name: 'Blue Dart Surface', rate: 85, eta: '2 to 3 days', rating: '4.8', recommended: true },
-          { id: 43, name: 'Delhivery Surface', rate: 68, eta: '2 to 3 days', rating: '4.5', economy: true },
+          { id: 55, name: 'Blue Dart Surface', rate: 85, eta: '2 to 3 days', rating: '4.8' },
+          { id: 43, name: 'Delhivery Surface', rate: 68, eta: '2 to 3 days', rating: '4.5' },
           { id: 10, name: 'Delhivery Air', rate: 110, eta: 'Tomorrow by 2 PM', rating: '4.7' },
           { id: 3, name: 'DTDC Express', rate: 72, eta: '1 to 2 days', rating: '4.2' },
           { id: 4, name: 'Shadowfax Surface', rate: 58, eta: '2 to 4 days', rating: '4.1' }
         ];
       }
+
+      // Sort couriers by priority hierarchy (Parity with React and Mobile App)
+      const firstItemName = (order?.items && order.items[0]?.name) || '';
+      const isException = isSpecialSku(firstItemName);
+      couriers.sort((a, b) => {
+        const scoreA = getCourierPriorityScore(a.name, isException);
+        const scoreB = getCourierPriorityScore(b.name, isException);
+        if (scoreA !== scoreB) return scoreA - scoreB;
+        return a.rate - b.rate;
+      });
 
       const summaryEl = document.getElementById('wizard-pickup-summary');
       if (summaryEl) {
@@ -1946,7 +2127,7 @@
             </div>
             <div style="text-align: right;">
               <div class="font-mono" style="font-size: 15px; font-weight: 700; color: ${idx === 0 ? 'var(--executive-gold)' : 'var(--primary-ink)'};">₹${c.rate}</div>
-              ${idx === 0 ? '<span class="kpi-badge gold" style="font-size: 9px;">Recommended</span>' : (c.rate < 70 ? '<span class="kpi-badge green" style="font-size: 9px;">Economy</span>' : '')}
+              ${idx === 0 ? '<span class="kpi-badge gold" style="font-size: 9px;">Priority Recommended</span>' : (c.rate < 70 ? '<span class="kpi-badge green" style="font-size: 9px;">Economy</span>' : '')}
             </div>
           </label>
         `).join('');
@@ -1987,7 +2168,7 @@
       if (order) {
         try {
           // Manual Booking: invoke /api/shiprocket/order/book with specific courier and chosen pickup address
-          const bRes = await fetch('/api/shiprocket/order/book', {
+          const bRes = await apiFetch('/api/shiprocket/order/book', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -2034,6 +2215,17 @@
             }
 
             showToast(`✅ Booked via ${order.courierName} from ${chosenPickupName.trim()}! AWB: ${order.awbCode}`, 'success');
+
+            closeSheet('sheet-courier-booking');
+            renderOrders();
+            renderCockpit();
+
+            // Open Order Details and display the generated shipping label
+            openOrderDetailSheet(order.id);
+            setTimeout(() => {
+              showShippingLabelModal(order);
+            }, 380);
+            return;
           } else {
             const errMsg = bData.error || `HTTP ${bRes.status}: Courier booking failed.`;
             showToast(errMsg, 'error');

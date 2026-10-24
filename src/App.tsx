@@ -238,12 +238,9 @@ export default function App() {
       return;
     }
 
-    // FIX: If no pickup location is saved on the order, open ServiceabilityModal so the
-    // user explicitly selects one. This prevents silent defaulting to the wrong warehouse.
-    if (!targetOrder.pickupLocation && !targetOrder.pickupAddress?.name) {
-      setSelectedOrderForCheck(targetOrder);
-      return;
-    }
+    // Default pickup location to Ashok og if not specifically set
+    const effectivePickupLocation = targetOrder.pickupLocation || targetOrder.pickupAddress?.name || 'Ashok og ';
+    const effectivePickupPincode = targetOrder.pickupAddress?.pincode || '400001';
 
     // 1. Capture exact previous status/state dynamically
     const previousStatus = targetOrder.status;
@@ -271,8 +268,8 @@ export default function App() {
       const res = await ShiprocketService.priorityBookOrder(
         orderId, 
         empId,
-        targetOrder.pickupLocation,
-        targetOrder.pickupAddress?.pincode,
+        effectivePickupLocation,
+        effectivePickupPincode,
         targetOrder.pickupAddress
       );
 
@@ -321,6 +318,8 @@ export default function App() {
           (res as any).labelUrl || updatedOrder?.labelUrl,
           orderId
         );
+
+        return updatedOrder;
       } else {
         // Booking failed on Shiprocket: Mark clearly as failed, do NOT mark as Booked, keep courier options open for retry
         const errMessage = res.error || 'Priority booking failed on Shiprocket.';
@@ -493,15 +492,15 @@ export default function App() {
           awbCode: res.awbCode || selectedOrderForCheck.awbCode,
           courierName: res.courierName || selectedOrderForCheck.courierName,
           labelUrl: (res as any).labelUrl || res.order?.labelUrl || selectedOrderForCheck.labelUrl,
-          pickupLocation: res.pickupLocation || (res as any).order?.pickupLocation || pickupLocationName || selectedOrderForCheck.pickupLocation,
+          pickupLocation: (res as any).pickupLocation || (res as any).order?.pickupLocation || pickupLocationName || selectedOrderForCheck.pickupLocation,
           pickupAddress: res.order?.pickupAddress || pickupAddress || selectedOrderForCheck.pickupAddress,
           errorMessage: undefined,
           trackingHistory: [
             { 
               date: new Date().toISOString().replace('T', ' ').slice(0, 16), 
               status: actualStatus === 'shipped' ? 'Shipped' : 'Booked', 
-              location: `${res.pickupLocation || pickupLocationName || settings.defaultPickupCity} (${pickupAddress?.city || 'MH'})`, 
-              activity: `Shipment booked via ${res.courierName}. AWB: ${res.awbCode || 'Assigned'}. Pickup Hub: ${res.pickupLocation || pickupLocationName || 'Registered Hub'}.` 
+              location: `${(res as any).pickupLocation || pickupLocationName || settings.defaultPickupCity} (${pickupAddress?.city || 'MH'})`, 
+              activity: `Shipment booked via ${res.courierName}. AWB: ${res.awbCode || 'Assigned'}. Pickup Hub: ${(res as any).pickupLocation || pickupLocationName || 'Registered Hub'}.` 
             }
           ]
         };

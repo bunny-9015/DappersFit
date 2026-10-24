@@ -82,6 +82,16 @@ const PORT = process.env.CONTROL_PLANE_PORT
   ? (Number(process.env.DEFAULT_APP_PORT) || 3000)
   : (Number(process.env.PORT) || 3000);
 
+app.use((req, res, next) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH');
+  res.setHeader('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
+  if (req.method === 'OPTIONS') {
+    return res.sendStatus(204);
+  }
+  next();
+});
+
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
@@ -3925,6 +3935,7 @@ app.post('/api/shiprocket/order/book', async (req, res) => {
   }
 
   const requestedPickupName = (pickupLocationName || pickupAddress?.name || '').trim();
+  const requestedPickupPin = (pickupPostcode || pickupAddress?.pincode || '').trim();
   const existingPickup = (orderToBook.pickupLocation || '').trim();
   const isChangingPickup = Boolean(
     requestedPickupName && 
@@ -4640,7 +4651,7 @@ app.post('/api/shiprocket/order/priority-book', async (req, res) => {
     if (!targetLocationName || targetLocationName.toLowerCase().includes('dapper')) {
       targetLocationName = 'Ashok og ';
     }
-    const allowDefault = false;
+    const allowDefault = true;
 
 
     // 1. Resolve and Validate Pickup Address
@@ -4879,9 +4890,9 @@ app.post('/api/shiprocket/order/priority-book', async (req, res) => {
           labelGenerated = true;
           console.log(`[Shiprocket] Official label generated successfully during priority booking: ${labelUrl}`);
         } else {
-          console.log(`[Shiprocket] Priority booking label deferred: ${labelResult.error}. Preserving booked order.`);
-          labelUrl = orderToBook.labelUrl || '';
-          labelGenerated = !!labelUrl;
+          console.log(`[Shiprocket] Priority booking label deferred: ${labelResult.error}. Generating instant thermal label.`);
+          labelUrl = orderToBook.labelUrl || `/api/shiprocket/download-label-pdf?shipmentId=${encodeURIComponent(shipmentId)}&orderId=${encodeURIComponent(orderToBook.id)}`;
+          labelGenerated = true;
         }
 
       } catch (liveErr: any) {
@@ -5132,10 +5143,16 @@ app.post('/api/shiprocket/label', async (req, res) => {
         }
       }
 
-      return res.status(404).json({
-        success: false,
-        labelGenerated: false,
-        error: 'Shiprocket has not generated the label for this shipment yet. The order is booked, but label is still processing.'
+      // Fallback: If Shiprocket CDN label is still pending, serve the instant thermal label PDF immediately
+      const fallbackUrl = `/api/shiprocket/download-label-pdf?shipmentId=${encodeURIComponent(shipmentId)}&filename=${encodeURIComponent(`Dappersfit-Label-${orderIdentifier}.pdf`)}`;
+      if (matchingOrder && !matchingOrder.labelUrl) {
+        matchingOrder.labelUrl = fallbackUrl;
+        await saveSingleOrderToDb(matchingOrder);
+      }
+      return res.json({
+        success: true,
+        labelUrl: fallbackUrl,
+        labelGenerated: true
       });
     } catch (err: any) {
       console.log('[Shiprocket Label Fetch Error]:', err.message || err);
@@ -5706,6 +5723,15 @@ app.post('/api/logout', (req, res) => {
 // Serve public static assets
 app.use('/public', express.static(path.join(process.cwd(), 'public')));
 app.use('/uploads', express.static(path.join(process.cwd(), 'public', 'uploads')));
+
+// PWA & iOS App: Serve dappersfit-pwa at /ios and /pwa
+const pwaPath = path.join(process.cwd(), '..', 'dappersfit-pwa');
+if (fs.existsSync(pwaPath)) {
+  app.use('/ios', express.static(pwaPath, { dotfiles: 'allow' }));
+  app.use('/pwa', express.static(pwaPath, { dotfiles: 'allow' }));
+  app.get('/ios', (req, res) => res.sendFile(path.join(pwaPath, 'index.html')));
+  app.get('/pwa', (req, res) => res.sendFile(path.join(pwaPath, 'index.html')));
+}
 
 // PWA: Serve manifest.json, sw.js, icon.jpg, and .well-known/assetlinks.json from root
 // dotfiles: 'allow' is required to serve /.well-known/assetlinks.json (TWA domain verification)

@@ -48,7 +48,7 @@ interface OrdersTableProps {
   isSyncingWallet?: boolean;
   onSyncWalletDetails?: () => void;
   onFetchWalletDetails?: () => void;
-  onPriorityBook?: (orderId: string) => void;
+  onPriorityBook?: (orderId: string) => Promise<Order | null | void> | void;
   currentUser?: { name: string; email: string; role: string } | null;
   onDeleteOrder?: (orderId: string) => void;
   onShowWhatsApp?: (order: Order) => void;
@@ -1422,9 +1422,12 @@ export default function OrdersTable({
                                   {onPriorityBook && (
                                     <button
                                       id={`pending-priority-btn-${order.id}`}
-                                      onClick={() => {
+                                      onClick={async () => {
                                         if (isOrderProcessing) return;
-                                        onPriorityBook(order.id);
+                                        const booked = await onPriorityBook(order.id);
+                                        if (booked) {
+                                          setSelectedOrderForLabel(booked as Order);
+                                        }
                                       }}
                                       disabled={isOrderProcessing}
                                       className={`px-3 py-1.5 font-black text-xs uppercase tracking-wider rounded-lg flex items-center gap-1 shadow-sm transition ${

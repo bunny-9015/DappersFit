@@ -11,7 +11,8 @@ const path = require('path');
 
 const PORT = process.env.PORT || 5173;
 const STATIC_ROOT = __dirname;
-const REMOTE_BACKEND = 'https://dappersfit.onrender.com';
+const DEFAULT_BACKEND = process.env.BACKEND_URL || 'http://127.0.0.1:3000';
+const FALLBACK_BACKEND = 'https://dappersfit.onrender.com';
 
 const MIME_TYPES = {
   '.html': 'text/html; charset=utf-8',
@@ -43,39 +44,51 @@ const server = http.createServer((req, res) => {
   const parsedUrl = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
   const pathname = parsedUrl.pathname;
 
-  // 1. API Proxy: Forward /api/* to Render
+  // 1. API Proxy: Forward /api/* to Localhost :3000 (with Render fallback)
   if (pathname.startsWith('/api')) {
-    const targetUrl = new URL(req.url, REMOTE_BACKEND);
-    console.log(`[Proxy] ${req.method} ${pathname} -> ${targetUrl.href}`);
+    const forwardRequest = (backendBase, isFallback = false) => {
+      const targetUrl = new URL(req.url, backendBase);
+      const isHttps = targetUrl.protocol === 'https:';
+      const client = isHttps ? https : http;
 
-    const proxyReq = https.request(
-      targetUrl,
-      {
-        method: req.method,
-        headers: {
-          ...req.headers,
-          host: targetUrl.host,
-          origin: REMOTE_BACKEND,
-          referer: REMOTE_BACKEND
+      console.log(`[Proxy] ${req.method} ${pathname} -> ${targetUrl.href}`);
+
+      const proxyReq = client.request(
+        targetUrl,
+        {
+          method: req.method,
+          headers: {
+            ...req.headers,
+            host: targetUrl.host,
+            origin: targetUrl.origin,
+            referer: targetUrl.origin
+          }
+        },
+        (proxyRes) => {
+          const headers = { ...proxyRes.headers };
+          headers['access-control-allow-origin'] = '*';
+          headers['access-control-allow-methods'] = 'GET, POST, PUT, DELETE, OPTIONS, PATCH';
+          headers['access-control-allow-headers'] = '*';
+          res.writeHead(proxyRes.statusCode || 200, headers);
+          proxyRes.pipe(res);
         }
-      },
-      (proxyRes) => {
-        const headers = { ...proxyRes.headers };
-        headers['access-control-allow-origin'] = '*';
-        headers['access-control-allow-methods'] = 'GET, POST, PUT, DELETE, OPTIONS, PATCH';
-        headers['access-control-allow-headers'] = '*';
-        res.writeHead(proxyRes.statusCode || 200, headers);
-        proxyRes.pipe(res);
-      }
-    );
+      );
 
-    proxyReq.on('error', (err) => {
-      console.error(`[Proxy Error] ${pathname}:`, err.message);
-      res.writeHead(502, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
-      res.end(JSON.stringify({ error: 'Backend Gateway Error', message: err.message }));
-    });
+      proxyReq.on('error', (err) => {
+        if (!isFallback && backendBase !== FALLBACK_BACKEND) {
+          console.warn(`[Proxy] Local backend (${backendBase}) unreachable, falling back to ${FALLBACK_BACKEND}...`);
+          forwardRequest(FALLBACK_BACKEND, true);
+        } else {
+          console.error(`[Proxy Error] ${pathname}:`, err.message);
+          res.writeHead(502, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+          res.end(JSON.stringify({ error: 'Backend Gateway Error', message: err.message }));
+        }
+      });
 
-    req.pipe(proxyReq);
+      req.pipe(proxyReq);
+    };
+
+    forwardRequest(DEFAULT_BACKEND);
     return;
   }
 
