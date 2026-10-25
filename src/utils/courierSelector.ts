@@ -17,6 +17,8 @@ export const COURIER_PRIORITY_STANDARD = [
 export const COURIER_PRIORITY_EXCEPTION = [
   'DAPPERS',
   'SURFACE_2KG_EXCEPTION',
+  'DELIVERY_SURFACE',
+  'BLUEDART_SURFACE',
   'INDIA_POST'
 ];
 
@@ -115,6 +117,20 @@ export function selectCourierCandidates(orderToBook: any, serviceableCouriersLis
   priorityCourierCandidates = priorityCourierCandidates.filter((c, index, self) => 
     index === self.findIndex((t) => t.courierId === c.courierId)
   );
+
+  // Robust Fallback: If no candidate matched any specific tier, include all serviceable couriers sorted by rate
+  if (priorityCourierCandidates.length === 0 && serviceableCouriersList && serviceableCouriersList.length > 0) {
+    console.log(`[Courier Selection] No predefined tiers matched; falling back to ${serviceableCouriersList.length} serviceable couriers sorted by lowest rate.`);
+    const sortedFallback = [...serviceableCouriersList].sort((a, b) => (Number(a.rate) || 0) - (Number(b.rate) || 0));
+    sortedFallback.forEach((c, idx) => {
+      priorityCourierCandidates.push({
+        ...c,
+        tierName: 'SERVICEABLE_FALLBACK',
+        tierRank: 90 + idx,
+        orderType: isException ? 'Exception' : 'Standard'
+      });
+    });
+  }
 
   return priorityCourierCandidates;
 }
