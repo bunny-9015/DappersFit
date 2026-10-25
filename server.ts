@@ -4835,8 +4835,22 @@ app.post('/api/shiprocket/order/priority-book', async (req, res) => {
 
   try {
     let couriersList = [];
+    // Priority Courier rule: "ac" product pickup address is strictly "Ashok og "
+    const orderItems = orderToBook.items || [];
+    const hasAcProduct = orderItems.some((item: any) => {
+      const sku = (item.sku || '').toLowerCase().trim();
+      const name = (item.name || '').toLowerCase().trim();
+      return sku === 'ac' || name === 'ac' || /\bac\b/i.test(sku) || /\bac\b/i.test(name);
+    });
+
     let targetLocationName = requestedLocationName || orderToBook.pickupLocation;
-    if (!targetLocationName || 
+    let targetPostcode = pickupPostcode || pickupAddress?.pincode;
+
+    if (hasAcProduct) {
+      targetLocationName = 'Ashok og ';
+      targetPostcode = '400001';
+      console.log(`[Shiprocket Priority Booking] "ac" product detected for order ${orderToBook.orderNumber || orderId}. Pickup location strictly enforced to "Ashok og " (400001).`);
+    } else if (!targetLocationName || 
         targetLocationName.toLowerCase().includes('dapper') || 
         targetLocationName.toLowerCase().includes('chennai') || 
         targetLocationName.toLowerCase().includes('simulated')) {
@@ -4852,7 +4866,7 @@ app.post('/api/shiprocket/order/priority-book', async (req, res) => {
       const pickupRes = await validateAndResolvePickupLocation(
         headers,
         targetLocationName,
-        pickupPostcode || pickupAddress?.pincode,
+        targetPostcode,
         pickupAddress,
         allowDefault
       );
