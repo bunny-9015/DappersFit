@@ -33,7 +33,8 @@ export default function OrderDetailsModal({ order, onClose, onRefreshTrack, onSh
   const pickupStatus = order.status === 'awb_assigned' ? 'Pending' : order.status === 'shipped' ? 'In Transit' : order.status === 'delivered' ? 'Delivered' : order.status === 'cancelled' ? 'Cancelled' : 'Pending';
   const expectedDelivery = order.deliveryDate || '—';
   const lastSynced = (order as any).lastSynced || '10 Jul 2026, 10:42 am';
-  const orderDate = (order as any).orderDateFormatted || '10 Jul 2026, 10:19 am';
+  const createdByName = order.createdByEmployeeName || (order as any).employee || 'Employee information unavailable';
+  const createdByPhone = order.createdByEmployeePhone || ((order as any).employeePhone) || 'Employee information unavailable';
 
   return (
     <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center z-50 p-4" id="order-details-overlay">
@@ -61,12 +62,42 @@ export default function OrderDetailsModal({ order, onClose, onRefreshTrack, onSh
 
         {/* Modal Content */}
         <div className="p-8 space-y-6 overflow-y-auto max-h-[80vh] font-sans" id="details-content">
+          {/* Prominent Employee Attribution Header (Top of Order Details) */}
+          <div className="bg-gradient-to-r from-slate-50 to-[#fcfbf9] border border-slate-200 rounded-2xl p-5 shadow-sm space-y-3" id="employee-attribution-header">
+            <div className="flex items-center justify-between pb-2 border-b border-slate-200/70">
+              <div className="flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-[#b8862f] animate-pulse" />
+                <span className="text-xs font-bold text-slate-800 uppercase tracking-wider">Order Attribution & Details</span>
+              </div>
+              <span className="text-[11px] font-mono text-slate-500">Dappersfit Dispatch System</span>
+            </div>
+            
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 text-xs font-sans">
+              <div>
+                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Order ID</label>
+                <span className="text-sm font-bold text-slate-900 font-mono block mt-0.5" id="attr-order-id">{order.orderNumber || order.id}</span>
+              </div>
+              <div>
+                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Created By</label>
+                <span className="text-sm font-bold text-slate-900 block mt-0.5" id="attr-employee-name">{createdByName}</span>
+              </div>
+              <div>
+                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Employee Phone Number</label>
+                <span className="text-sm font-bold text-[#b8862f] font-mono block mt-0.5" id="attr-employee-phone">{createdByPhone}</span>
+              </div>
+              <div>
+                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Order Status</label>
+                <span className="text-sm font-bold uppercase block mt-0.5 text-emerald-700" id="attr-order-status">{order.status}</span>
+              </div>
+            </div>
+          </div>
+
           <div className="grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-6 text-sm">
             
             {/* Left Column */}
             <div className="space-y-5">
               <div id="field-order-id">
-                <label className="text-[11px] font-sans font-bold text-slate-400 uppercase tracking-wider block">Order ID</label>
+                <label className="text-[11px] font-sans font-bold text-slate-400 uppercase tracking-wider block">Order Reference</label>
                 <span className="text-base font-bold text-slate-850 block mt-0.5">{orderId}</span>
               </div>
 
@@ -109,12 +140,17 @@ export default function OrderDetailsModal({ order, onClose, onRefreshTrack, onSh
             {/* Right Column */}
             <div className="space-y-5">
               <div id="field-employee">
-                <label className="text-[11px] font-sans font-bold text-slate-400 uppercase tracking-wider block">Employee</label>
-                <span className="text-base font-bold text-slate-850 block mt-0.5">{employee}</span>
+                <label className="text-[11px] font-sans font-bold text-slate-400 uppercase tracking-wider block">Created By (Employee)</label>
+                <span className="text-base font-bold text-slate-850 block mt-0.5">{createdByName}</span>
               </div>
 
-              <div id="field-phone">
-                <label className="text-[11px] font-sans font-bold text-slate-400 uppercase tracking-wider block">Phone</label>
+              <div id="field-employee-phone">
+                <label className="text-[11px] font-sans font-bold text-slate-400 uppercase tracking-wider block">Employee Phone Number</label>
+                <span className="text-base font-bold text-[#b8862f] font-mono block mt-0.5">{createdByPhone}</span>
+              </div>
+
+              <div id="field-customer-phone">
+                <label className="text-[11px] font-sans font-bold text-slate-400 uppercase tracking-wider block">Customer Phone Number</label>
                 <span className="text-base font-bold text-slate-850 block mt-0.5">{phone}</span>
               </div>
 
@@ -145,7 +181,7 @@ export default function OrderDetailsModal({ order, onClose, onRefreshTrack, onSh
 
               <div id="field-order-date">
                 <label className="text-[11px] font-sans font-bold text-slate-400 uppercase tracking-wider block">Order Date</label>
-                <span className="text-base font-semibold text-slate-800 block mt-0.5">{orderDate}</span>
+                <span className="text-base font-semibold text-slate-800 block mt-0.5">{order.date || '—'}</span>
               </div>
             </div>
           </div>

@@ -604,23 +604,26 @@
         </div>
 
         <!-- Manual Review & Edit Fields -->
-        <form id="form-add-order">
+        <form id="form-add-order" novalidate>
           <div class="form-group">
             <label class="form-label" for="new-order-customer-name">Customer Full Name *</label>
-            <input type="text" id="new-order-customer-name" class="form-control" placeholder="e.g. Adari Ramachandra Naidu" required>
+            <input type="text" id="new-order-customer-name" class="form-control" placeholder="e.g. Adari Ramachandra Naidu">
+            <div id="error-customer-name" class="field-error-msg" style="display: none; color: #ef4444; font-size: 11px; margin-top: 4px; font-weight: 600;"></div>
           </div>
           <div class="form-group">
             <label class="form-label" for="new-order-phone">Phone Number (+91) *</label>
-            <input type="tel" id="new-order-phone" class="form-control font-mono" placeholder="10-digit mobile number" required>
+            <input type="tel" id="new-order-phone" class="form-control font-mono" placeholder="10-digit mobile number">
+            <div id="error-phone" class="field-error-msg" style="display: none; color: #ef4444; font-size: 11px; margin-top: 4px; font-weight: 600;"></div>
           </div>
           <div class="form-group">
             <label class="form-label" for="new-order-address">Street Address *</label>
-            <input type="text" id="new-order-address" class="form-control" placeholder="House / Flat / Street / Landmark" required>
+            <input type="text" id="new-order-address" class="form-control" placeholder="House / Flat / Street / Landmark">
+            <div id="error-address" class="field-error-msg" style="display: none; color: #ef4444; font-size: 11px; margin-top: 4px; font-weight: 600;"></div>
           </div>
           <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px;">
             <div class="form-group">
-              <label class="form-label" for="new-order-city">City *</label>
-              <input type="text" id="new-order-city" class="form-control" placeholder="City" required>
+              <label class="form-label" for="new-order-city">City</label>
+              <input type="text" id="new-order-city" class="form-control" placeholder="City">
             </div>
             <div class="form-group">
               <label class="form-label" for="new-order-state">State</label>
@@ -628,7 +631,8 @@
             </div>
             <div class="form-group">
               <label class="form-label" for="new-order-pincode">Pincode *</label>
-              <input type="text" id="new-order-pincode" class="form-control font-mono" placeholder="6 digits" required>
+              <input type="text" id="new-order-pincode" class="form-control font-mono" placeholder="6 digits">
+              <div id="error-pincode" class="field-error-msg" style="display: none; color: #ef4444; font-size: 11px; margin-top: 4px; font-weight: 600;"></div>
             </div>
           </div>
 

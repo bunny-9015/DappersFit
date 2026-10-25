@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { Order, CourierServiceability } from '../types';
 import { ShiprocketService } from '../services/shiprocketService';
+import { validateOrderFields } from '../utils/orderValidation';
 
 interface ServiceabilityModalProps {
   order: Order;
@@ -47,23 +48,25 @@ export default function ServiceabilityModal({
   isProcessing = false
 }: ServiceabilityModalProps) {
   const [isBooking, setIsBooking] = useState<boolean>(false);
-  const bookingDisabled = isBooking || isProcessing;
 
-  // Use the exact address pasted in the order itself
+  // Use the exact address from the order itself without dummy fallback defaults
   const rawAddr = (order.address || {}) as any;
   const activeDeliveryAddress = {
-    name: rawAddr.name || order.customerName || 'Customer',
-    phone: rawAddr.phone || '8019566202',
-    address: rawAddr.address || 'Ramnagar 6th line, Chemakurti',
-    city: rawAddr.city || 'Chemakurti',
-    state: rawAddr.state || 'Andhra Pradesh',
-    pincode: rawAddr.pincode || '523272',
-    email: rawAddr.email || ''
+    name: (rawAddr.name || order.customerName || '').trim(),
+    phone: (rawAddr.phone || '').trim(),
+    address: (rawAddr.address || '').trim(),
+    city: (rawAddr.city || '').trim(),
+    state: (rawAddr.state || '').trim(),
+    pincode: (rawAddr.pincode || '').trim(),
+    email: (rawAddr.email || '').trim()
   };
 
-  // Scan customer name beforehand: if missing, empty, or Walkin Customer, booking is blocked
-  const nameTrimmed = (order.customerName || '').trim();
-  const isNameInvalid = !nameTrimmed || nameTrimmed.toLowerCase() === 'walkin customer' || nameTrimmed.toLowerCase() === 'walk-in customer';
+  const orderValidation = validateOrderFields({
+    customerName: order.customerName || activeDeliveryAddress.name,
+    address: activeDeliveryAddress
+  });
+
+  const bookingDisabled = isBooking || isProcessing || !orderValidation.isValid;
 
   const [modalWalletBalance, setModalWalletBalance] = useState<number | undefined>(walletBalance);
   const [isCheckingWallet, setIsCheckingWallet] = useState<boolean>(false);
@@ -157,8 +160,9 @@ export default function ServiceabilityModal({
   useEffect(() => {
     if (!activePickupAddress) return;
 
-    if (isNameInvalid) {
-      setCourierError("Booking is blocked because the customer name is missing, empty, or set to 'Walkin Customer'.");
+    if (!orderValidation.isValid) {
+      const errList = Object.values(orderValidation.errors).join(', ');
+      setCourierError(`Booking blocked: Mandatory order details missing (${errList}). Please update the order first.`);
       return;
     }
 
@@ -182,7 +186,7 @@ export default function ServiceabilityModal({
     }
 
     fetchServiceability();
-  }, [activeDeliveryAddress.pincode, activePickupAddress?.pincode, order.weight, isNameInvalid]);
+  }, [activeDeliveryAddress.pincode, activePickupAddress?.pincode, order.weight, orderValidation.isValid]);
 
   return (
     <div className="fixed inset-0 bg-slate-950/85 backdrop-blur-sm flex items-center justify-center z-50 p-4" id="serviceability-modal-overlay">
@@ -264,16 +268,23 @@ export default function ServiceabilityModal({
             </div>
           )}
 
-          {isNameInvalid && (
-            <div className="flex items-start space-x-3 p-4 bg-red-950/40 border-2 border-red-500/60 text-red-200 rounded-xl animate-pulse" id="customer-name-invalid-warning-banner">
-              <AlertCircle className="w-5 h-5 shrink-0 text-red-400 mt-0.5" />
-              <div>
-                <span className="font-bold text-xs tracking-wide uppercase text-red-300">⚠️ Mandatory Customer Name Required</span>
-                <p className="mt-1 font-sans text-xs leading-relaxed text-slate-300">
-                  This order's customer name is missing, empty, or currently set to <strong className="font-mono text-white bg-red-500/20 px-1 rounded">"Walkin Customer"</strong>. 
-                  Shiprocket bookings require a valid billing name. Please close this window, edit this order's details to specify a real customer name, and then retry.
-                </p>
+          {!orderValidation.isValid && (
+            <div className="p-4 bg-red-950/60 border-2 border-red-500 text-red-200 rounded-xl space-y-2 animate-pulse" id="order-validation-error-banner">
+              <div className="flex items-center gap-2">
+                <AlertCircle className="w-5 h-5 text-red-400 shrink-0" />
+                <span className="font-black text-xs uppercase tracking-wide text-red-300">⚠️ Mandatory Order Information Missing</span>
               </div>
+              <p className="text-xs text-red-200">
+                This order cannot be booked or submitted to Shiprocket until all required fields are provided:
+              </p>
+              <ul className="text-xs text-red-300 list-disc list-inside space-y-1 font-semibold">
+                {Object.entries(orderValidation.errors).map(([key, err]) => (
+                  <li key={key}>{err}</li>
+                ))}
+              </ul>
+              <p className="text-[11px] text-slate-450 mt-1">
+                Please close this modal, click Edit on this order, fill in the missing fields, and then retry courier booking.
+              </p>
             </div>
           )}
 

@@ -41,7 +41,6 @@ export default function Sidebar({
   const baseItems = [
     { id: 'dashboard', name: 'Dashboard', icon: LayoutDashboard },
     { id: 'orders', name: 'Orders', icon: ClipboardList },
-    { id: 'courier-booking', name: 'Courier Booking', icon: PackageCheck },
     { id: 'products', name: 'Products', icon: Boxes },
     { id: 'replacements', name: 'Replacements', icon: ArrowRightLeft },
     { id: 'customers', name: 'Customers', icon: UserCheck },

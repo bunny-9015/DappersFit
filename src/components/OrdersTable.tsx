@@ -15,6 +15,7 @@ import { getTodayDateString, getYesterdayDateString } from '../utils/dateUtils';
 import { downloadFileFromUrl } from '../utils/downloadHelper';
 import OrderDetailsModal from './OrderDetailsModal';
 import ShippingLabelModal from './ShippingLabelModal';
+import { validateOrderFields } from '../utils/orderValidation';
 
 const CATALOG_ITEMS: any[] = [];
 
@@ -49,7 +50,7 @@ interface OrdersTableProps {
   onSyncWalletDetails?: () => void;
   onFetchWalletDetails?: () => void;
   onPriorityBook?: (orderId: string) => Promise<Order | null | void> | void;
-  currentUser?: { name: string; email: string; role: string } | null;
+  currentUser?: { name: string; email: string; role: string; phone?: string } | null;
   onDeleteOrder?: (orderId: string) => void;
   onShowWhatsApp?: (order: Order) => void;
   processingOrderIds?: string[];
@@ -161,6 +162,8 @@ export default function OrdersTable({
   // Modals & confirmation alerts
   const [selectedOrderForDetails, setSelectedOrderForDetails] = useState<Order | null>(null);
   const [selectedOrderForLabel, setSelectedOrderForLabel] = useState<Order | null>(null);
+  const [duplicateWarningOrder, setDuplicateWarningOrder] = useState<Order | null>(null);
+  const [pendingOrderPayload, setPendingOrderPayload] = useState<any | null>(null);
 
   // New Order / Edit Order Form state
   const [isNewOrderOpen, setIsNewOrderOpen] = useState<boolean>(false);
@@ -175,6 +178,8 @@ export default function OrdersTable({
   const [phone, setPhone] = useState<string>('');
   const [nameError, setNameError] = useState<string | null>(null);
   const [phoneError, setPhoneError] = useState<string | null>(null);
+  const [addressError, setAddressError] = useState<string | null>(null);
+  const [pincodeError, setPincodeError] = useState<string | null>(null);
   const [addressText, setAddressText] = useState<string>('');
   const [city, setCity] = useState<string>('');
   const [state, setState] = useState<string>('');
@@ -266,6 +271,8 @@ export default function OrdersTable({
     setPhone('');
     setNameError(null);
     setPhoneError(null);
+    setAddressError(null);
+    setPincodeError(null);
     setAddressText('');
     setCity('');
     setState('');
@@ -331,29 +338,24 @@ export default function OrdersTable({
   const handleSubmitNewOrder = (e: React.FormEvent) => {
     e.preventDefault();
     
-    let hasError = false;
-    
-    const trimmedName = (customerName || '').trim();
-    const lowerName = trimmedName.toLowerCase();
-    if (!trimmedName) {
-      setNameError('⚠️ Customer Name is required. Please do not leave it blank.');
-      hasError = true;
-    } else if (lowerName === 'unknown' || lowerName === 'n/a' || lowerName === 'walkin customer' || lowerName === 'walk-in customer' || lowerName === 'none' || lowerName === 'null') {
-      setNameError('⚠️ Customer Name is required. Placeholder names like "Unknown" or "N/A" are not allowed.');
-      hasError = true;
-    } else {
-      setNameError(null);
-    }
+    const validation = validateOrderFields({
+      customerName,
+      address: {
+        name: customerName,
+        phone,
+        address: addressText,
+        pincode,
+        city,
+        state
+      }
+    });
 
-    const trimmedPhone = (phone || '').trim();
-    if (!trimmedPhone) {
-      setPhoneError('⚠️ Phone Number is required. Please do not leave it blank.');
-      hasError = true;
-    } else {
-      setPhoneError(null);
-    }
+    setNameError(validation.errors.name || null);
+    setPhoneError(validation.errors.phone || null);
+    setAddressError(validation.errors.address || null);
+    setPincodeError(validation.errors.pincode || null);
 
-    if (hasError) {
+    if (!validation.isValid) {
       return;
     }
     
@@ -377,6 +379,10 @@ export default function OrdersTable({
         finalAssigned = currentUser.name;
       }
     }
+
+    const resolvedEmployeePhone = (currentUser as any)?.phone || 
+      (employeesList.find(e => e.id === createdByEmployeeId || e.email === createdByEmployeeId || e.id === finalAssigned)?.phone) || 
+      (currentUser?.role === 'admin' ? '9945347898' : undefined);
 
     const newOrderPayload: any = {
       id: isEditingOrder ? editOrderId : undefined,
@@ -413,6 +419,7 @@ export default function OrdersTable({
       assignedEmployeeId: finalAssigned || undefined,
       createdByEmployeeId: createdByEmployeeId || undefined,
       createdByEmployeeName: createdByEmployeeName || undefined,
+      createdByEmployeePhone: resolvedEmployeePhone || existing?.createdByEmployeePhone || undefined,
       paymentMethod: paymentMethod,
       productAdvance: productAdvance,
       productAdvanceIncentive: productAdvance ? 50 : 30,
@@ -422,6 +429,50 @@ export default function OrdersTable({
       courierName: existing ? existing.courierName : undefined,
       deliveryDate: existing ? existing.deliveryDate : undefined
     };
+
+    if (!isEditingOrder) {
+      const normStr = (s?: string) => (s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+      const normDigits = (s?: string) => (s || '').replace(/\D/g, '');
+      const last10 = (p?: string) => {
+        const d = normDigits(p);
+        return d.length >= 10 ? d.slice(-10) : d;
+      };
+
+      const inCustomer = normStr(customerName);
+      const inPhone = last10(phone);
+      const inAddress = normStr(addressText);
+      const inPincode = normDigits(pincode);
+      const inProduct = normStr(productName);
+      const inQuantity = Number(quantity);
+
+      const hasAllFields = inCustomer && inPhone.length >= 10 && inAddress.length >= 5 && inPincode.length === 6 && inProduct;
+
+      if (hasAllFields) {
+        const dup = orders.find((o) => {
+          if (o.status === 'cancelled') return false;
+          const oCustomer = normStr(o.customerName || o.address?.name);
+          const oPhone = last10(o.address?.phone);
+          const oAddress = normStr(o.address?.address);
+          const oPincode = normDigits(o.address?.pincode);
+          const oFirstItem = Array.isArray(o.items) && o.items.length > 0 ? o.items[0] : null;
+          const oProduct = normStr(oFirstItem?.name || oFirstItem?.sku);
+          const oQuantity = Number(oFirstItem?.quantity || 1);
+
+          return oCustomer === inCustomer &&
+                 oPhone === inPhone &&
+                 oAddress === inAddress &&
+                 oPincode === inPincode &&
+                 oProduct === inProduct &&
+                 oQuantity === inQuantity;
+        });
+
+        if (dup) {
+          setDuplicateWarningOrder(dup);
+          setPendingOrderPayload(newOrderPayload);
+          return;
+        }
+      }
+    }
 
     if (onAddOrder) {
       onAddOrder(newOrderPayload);
@@ -1271,15 +1322,40 @@ export default function OrdersTable({
                               </span>
                             )}
                           </div>
-                          <span className="text-[11px] text-slate-500 block font-mono">{order.address?.phone || '—'}</span>
+                          {(() => {
+                            const cleanPhone = (order.address?.phone || '').replace(/\D/g, '');
+                            const isPhoneMissing = !order.address?.phone || cleanPhone.length < 10;
+                            return isPhoneMissing ? (
+                              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[9px] font-bold text-red-700 bg-red-100 border border-red-200 rounded mt-0.5" id={`phone-warn-badge-${order.id}`}>
+                                ⚠️ Mobile required
+                              </span>
+                            ) : (
+                              <span className="text-[11px] text-slate-500 block font-mono">{order.address?.phone}</span>
+                            );
+                          })()}
                         </td>
 
                         {/* Address */}
                         <td className="px-6 py-4 max-w-xs truncate">
-                          <span className="text-slate-700 block text-xs truncate font-medium">{order.address?.address || '—'}</span>
-                          <span className="text-[10px] text-slate-450 font-mono block mt-0.5">
-                            {order.address?.city || '—'}, {order.address?.pincode || '—'}
-                          </span>
+                          {(!order.address?.address || order.address.address.trim().length < 5) ? (
+                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[9px] font-bold text-red-700 bg-red-100 border border-red-200 rounded mb-1" id={`address-warn-badge-${order.id}`}>
+                              ⚠️ Address required
+                            </span>
+                          ) : (
+                            <span className="text-slate-700 block text-xs truncate font-medium">{order.address?.address}</span>
+                          )}
+                          <div className="flex items-center gap-1.5 mt-0.5">
+                            <span className="text-[10px] text-slate-450 font-mono">
+                              {order.address?.city || '—'},
+                            </span>
+                            {(!order.address?.pincode || !/^\d{6}$/.test(String(order.address?.pincode).trim())) ? (
+                              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[9px] font-bold text-red-700 bg-red-100 border border-red-200 rounded" id={`pincode-warn-badge-${order.id}`}>
+                                ⚠️ PIN code required
+                              </span>
+                            ) : (
+                              <span className="text-[10px] text-slate-450 font-mono">{order.address?.pincode}</span>
+                            )}
+                          </div>
                         </td>
 
                         {/* Payment */}
@@ -1399,6 +1475,17 @@ export default function OrdersTable({
                                     data-legacy-id={`pending-verify-btn-${order.id}`}
                                     onClick={() => {
                                       if (isOrderProcessing) return;
+                                      const val = validateOrderFields(order);
+                                      if (!val.isValid) {
+                                        const missing = Object.values(val.errors).join('\n• ');
+                                        alert(`Cannot book courier! Please complete missing order fields:\n• ${missing}`);
+                                        handleStartEdit(order);
+                                        setNameError(val.errors.name || null);
+                                        setPhoneError(val.errors.phone || null);
+                                        setAddressError(val.errors.address || null);
+                                        setPincodeError(val.errors.pincode || null);
+                                        return;
+                                      }
                                       onCheckServiceability(order);
                                     }}
                                     disabled={isOrderProcessing}
@@ -1424,6 +1511,17 @@ export default function OrdersTable({
                                       id={`pending-priority-btn-${order.id}`}
                                       onClick={async () => {
                                         if (isOrderProcessing) return;
+                                        const val = validateOrderFields(order);
+                                        if (!val.isValid) {
+                                          const missing = Object.values(val.errors).join('\n• ');
+                                          alert(`Cannot priority book order! Please complete missing order fields:\n• ${missing}`);
+                                          handleStartEdit(order);
+                                          setNameError(val.errors.name || null);
+                                          setPhoneError(val.errors.phone || null);
+                                          setAddressError(val.errors.address || null);
+                                          setPincodeError(val.errors.pincode || null);
+                                          return;
+                                        }
                                         const booked = await onPriorityBook(order.id);
                                         if (booked) {
                                           setSelectedOrderForLabel(booked as Order);
@@ -1909,23 +2007,35 @@ export default function OrdersTable({
                 </span>
 
                 <div className="space-y-1">
-                  <label className="font-bold text-slate-600">Full Street Address *</label>
+                  <label className="font-bold text-slate-600 block text-xs">Full Street Address *</label>
                   <input
                     type="text"
-                    required
                     value={addressText}
-                    onChange={(e) => setAddressText(e.target.value)}
+                    onChange={(e) => {
+                      setAddressText(e.target.value);
+                      if (e.target.value.trim().length >= 5) {
+                        setAddressError(null);
+                      }
+                    }}
                     placeholder="House/flat number, street name, locality landmark"
-                    className="w-full p-2.5 bg-white border border-slate-200 rounded-lg focus:border-[#b8862f] outline-none transition"
+                    className={`w-full p-2.5 bg-white border rounded-lg outline-none transition ${
+                      addressError 
+                        ? 'border-red-500 focus:border-red-500 ring-2 ring-red-100' 
+                        : 'border-slate-200 focus:border-[#b8862f]'
+                    }`}
                   />
+                  {addressError && (
+                    <p className="text-[11px] text-red-650 font-bold mt-1 flex items-center gap-1" id="customer-address-error-msg">
+                      {addressError}
+                    </p>
+                  )}
                 </div>
 
                 <div className="grid grid-cols-3 gap-2.5">
                   <div className="space-y-1">
-                    <label className="font-bold text-slate-600">City *</label>
+                    <label className="font-bold text-slate-600 block text-xs">City</label>
                     <input
                       type="text"
-                      required
                       value={city}
                       onChange={(e) => setCity(e.target.value)}
                       placeholder="City"
@@ -1933,10 +2043,9 @@ export default function OrdersTable({
                     />
                   </div>
                   <div className="space-y-1">
-                    <label className="font-bold text-slate-600">State *</label>
+                    <label className="font-bold text-slate-600 block text-xs">State</label>
                     <input
                       type="text"
-                      required
                       value={state}
                       onChange={(e) => setState(e.target.value)}
                       placeholder="State"
@@ -1944,15 +2053,28 @@ export default function OrdersTable({
                     />
                   </div>
                   <div className="space-y-1">
-                    <label className="font-bold text-slate-600">Pincode *</label>
+                    <label className="font-bold text-slate-600 block text-xs">Pincode *</label>
                     <input
                       type="text"
-                      required
                       value={pincode}
-                      onChange={(e) => setPincode(e.target.value)}
+                      onChange={(e) => {
+                        setPincode(e.target.value);
+                        if (/^\d{6}$/.test(e.target.value.trim())) {
+                          setPincodeError(null);
+                        }
+                      }}
                       placeholder="6-digit pincode"
-                      className="w-full p-2 bg-white border border-slate-200 rounded-lg focus:border-[#b8862f] outline-none transition font-mono"
+                      className={`w-full p-2 bg-white border rounded-lg outline-none transition font-mono ${
+                        pincodeError 
+                          ? 'border-red-500 focus:border-red-500 ring-2 ring-red-100' 
+                          : 'border-slate-200 focus:border-[#b8862f]'
+                      }`}
                     />
+                    {pincodeError && (
+                      <p className="text-[11px] text-red-650 font-bold mt-1 flex items-center gap-1" id="customer-pincode-error-msg">
+                        {pincodeError}
+                      </p>
+                    )}
                   </div>
                 </div>
               </div>
@@ -1976,6 +2098,55 @@ export default function OrdersTable({
               </div>
 
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Duplicate Order Warning Modal */}
+      {duplicateWarningOrder && (
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center z-[110] p-4" id="duplicate-warning-modal">
+          <div className="bg-slate-900 border border-amber-500/50 rounded-2xl p-6 max-w-md w-full shadow-2xl text-left space-y-4 animate-in fade-in zoom-in-95">
+            <div className="flex items-center gap-2.5 text-amber-400">
+              <AlertCircle className="w-5 h-5 text-amber-400 shrink-0" />
+              <h3 className="text-base font-bold text-white">Duplicate Order Detected</h3>
+            </div>
+            <p className="text-xs text-slate-300 leading-relaxed">
+              This order contains the exact same customer name, phone number, delivery address, PIN code, product, and quantity as an existing order:
+            </p>
+            <div className="bg-slate-950 p-3.5 rounded-xl border border-slate-800 text-xs font-mono space-y-1.5">
+              <div><span className="text-slate-500">Matching Order:</span> <span className="text-amber-400 font-bold">{duplicateWarningOrder.orderNumber || duplicateWarningOrder.id}</span></div>
+              <div><span className="text-slate-500">Customer:</span> <span className="text-white">{duplicateWarningOrder.customerName}</span></div>
+              <div><span className="text-slate-500">Phone:</span> <span className="text-white">{duplicateWarningOrder.address?.phone}</span></div>
+              <div><span className="text-slate-500">Delivery Address:</span> <span className="text-slate-300">{duplicateWarningOrder.address?.address}, {duplicateWarningOrder.address?.pincode}</span></div>
+              <div><span className="text-slate-500">Product:</span> <span className="text-white">{duplicateWarningOrder.items?.[0]?.name} (Qty: {duplicateWarningOrder.items?.[0]?.quantity})</span></div>
+              <div><span className="text-slate-500">Status:</span> <span className="text-emerald-400 uppercase font-bold">{duplicateWarningOrder.status}</span></div>
+            </div>
+            <div className="flex items-center justify-end gap-2.5 pt-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setDuplicateWarningOrder(null);
+                  setPendingOrderPayload(null);
+                }}
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-xl transition"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (onAddOrder && pendingOrderPayload) {
+                    onAddOrder(pendingOrderPayload);
+                  }
+                  setDuplicateWarningOrder(null);
+                  setPendingOrderPayload(null);
+                  handleCloseForm();
+                }}
+                className="px-4 py-2 bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold rounded-xl transition shadow-lg"
+              >
+                Proceed & Create Anyway
+              </button>
+            </div>
           </div>
         </div>
       )}

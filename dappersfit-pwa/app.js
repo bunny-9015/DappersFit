@@ -1474,6 +1474,24 @@
     const order = state.orders.find(o => o.id === orderId);
     if (!order) return;
 
+    // Check mandatory fields before dispatching
+    const cName = (order.customerName || '').trim();
+    const cPhone = (order.address?.phone || '').replace(/\D/g, '');
+    const cAddr = (order.address?.address || '').trim();
+    const cPin = (order.address?.pincode || '').trim();
+
+    const missing = [];
+    if (!cName || cName.toLowerCase() === 'walkin customer') missing.push('Customer Name');
+    if (!cPhone || cPhone.length < 10) missing.push('Mobile Number');
+    if (!cAddr || cAddr.length < 5) missing.push('Delivery Address');
+    if (!cPin || !/^\d{6}$/.test(cPin)) missing.push('PIN Code');
+
+    if (missing.length > 0) {
+      haptic('medium');
+      alert(`Cannot book Priority Dispatch! Missing required order details:\n• ${missing.join('\n• ')}`);
+      return;
+    }
+
     haptic('heavy');
     showToast(`Booking Priority Air for ${order.orderNumber}...`, 'info');
 
@@ -1641,20 +1659,104 @@
       };
     }
 
+    const nameInput = document.getElementById('new-order-customer-name');
+    const phoneInput = document.getElementById('new-order-phone');
+    const addrInput = document.getElementById('new-order-address');
+    const pinInput = document.getElementById('new-order-pincode');
+
+    const errName = document.getElementById('error-customer-name');
+    const errPhone = document.getElementById('error-phone');
+    const errAddr = document.getElementById('error-address');
+    const errPin = document.getElementById('error-pincode');
+
+    const clearErrors = () => {
+      [nameInput, phoneInput, addrInput, pinInput].forEach(el => {
+        if (el) el.style.border = '1px solid var(--hairline-border)';
+      });
+      [errName, errPhone, errAddr, errPin].forEach(el => {
+        if (el) { el.style.display = 'none'; el.textContent = ''; }
+      });
+    };
+    clearErrors();
+
+    nameInput?.addEventListener('input', () => {
+      nameInput.style.border = '1px solid var(--hairline-border)';
+      if (errName) errName.style.display = 'none';
+    });
+    phoneInput?.addEventListener('input', () => {
+      phoneInput.style.border = '1px solid var(--hairline-border)';
+      if (errPhone) errPhone.style.display = 'none';
+    });
+    addrInput?.addEventListener('input', () => {
+      addrInput.style.border = '1px solid var(--hairline-border)';
+      if (errAddr) errAddr.style.display = 'none';
+    });
+    pinInput?.addEventListener('input', () => {
+      pinInput.style.border = '1px solid var(--hairline-border)';
+      if (errPin) errPin.style.display = 'none';
+    });
+
     // Form submission handler
     if (form) {
       form.onsubmit = async (e) => {
         e.preventDefault();
-        const customerName = document.getElementById('new-order-customer-name').value.trim();
-        const phone = document.getElementById('new-order-phone').value.trim();
-        const address = document.getElementById('new-order-address').value.trim();
-        const city = document.getElementById('new-order-city').value.trim();
-        const stateName = document.getElementById('new-order-state').value.trim() || 'India';
-        const pincode = document.getElementById('new-order-pincode').value.trim();
-        const itemName = document.getElementById('new-order-item-name').value.trim();
-        const amount = parseFloat(document.getElementById('new-order-amount').value) || 1499;
-        const paymentMethod = document.getElementById('new-order-payment').value;
-        const isAdvance = document.getElementById('new-order-advance').checked;
+        const customerName = (nameInput?.value || '').trim();
+        const phone = (phoneInput?.value || '').trim();
+        const address = (addrInput?.value || '').trim();
+        const city = (document.getElementById('new-order-city')?.value || '').trim();
+        const stateName = (document.getElementById('new-order-state')?.value || '').trim() || 'India';
+        const pincode = (pinInput?.value || '').trim();
+        const itemName = (document.getElementById('new-order-item-name')?.value || '').trim();
+        const amount = parseFloat(document.getElementById('new-order-amount')?.value) || 1499;
+        const paymentMethod = document.getElementById('new-order-payment')?.value;
+        const isAdvance = document.getElementById('new-order-advance')?.checked;
+
+        // Mandatory Field Validation
+        let hasError = false;
+        clearErrors();
+
+        const lowerName = customerName.toLowerCase();
+        if (!customerName || lowerName === 'walkin customer' || lowerName === 'walk-in customer' || lowerName === 'unknown' || lowerName === 'n/a' || lowerName === 'none') {
+          hasError = true;
+          if (nameInput) nameInput.style.border = '1px solid #ef4444';
+          if (errName) {
+            errName.style.display = 'block';
+            errName.textContent = 'Customer name is required.';
+          }
+        }
+
+        const phoneDigits = phone.replace(/\D/g, '');
+        if (!phone || phoneDigits.length < 10) {
+          hasError = true;
+          if (phoneInput) phoneInput.style.border = '1px solid #ef4444';
+          if (errPhone) {
+            errPhone.style.display = 'block';
+            errPhone.textContent = 'Mobile number is required (minimum 10 digits).';
+          }
+        }
+
+        if (!address || address.length < 5) {
+          hasError = true;
+          if (addrInput) addrInput.style.border = '1px solid #ef4444';
+          if (errAddr) {
+            errAddr.style.display = 'block';
+            errAddr.textContent = 'Delivery address is required (minimum 5 characters).';
+          }
+        }
+
+        if (!pincode || !/^\d{6}$/.test(pincode)) {
+          hasError = true;
+          if (pinInput) pinInput.style.border = '1px solid #ef4444';
+          if (errPin) {
+            errPin.style.display = 'block';
+            errPin.textContent = 'PIN code is required (6-digit numeric postal code).';
+          }
+        }
+
+        if (hasError) {
+          haptic('medium');
+          return;
+        }
 
         // Duplicate check (Matches Android App)
         const existing = state.orders.find(o => (o.customerName || '').toLowerCase() === customerName.toLowerCase());

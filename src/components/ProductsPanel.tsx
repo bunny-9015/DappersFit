@@ -4,20 +4,29 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { Search, Plus, Boxes, ArrowUpDown, Tag, AlertTriangle, Edit, Trash2 } from 'lucide-react';
+import { Search, Plus, Boxes, ArrowUpDown, Tag, AlertTriangle, Edit, Trash2, Shield, DollarSign, FileText } from 'lucide-react';
 
-interface Product {
+export interface Product {
   id: string;
   name: string;
   sku: string;
   category: string;
   stock: number;
   weight: number;
+  price?: number;
+  description?: string;
+}
+
+interface ProductsPanelProps {
+  currentUser?: { name: string; email: string; role: 'admin' | 'employee' } | null;
 }
 
 const INITIAL_PRODUCTS: Product[] = [];
 
-export default function ProductsPanel() {
+export default function ProductsPanel({ currentUser }: ProductsPanelProps) {
+  // Check if current user is an authorized admin
+  const isAdmin = currentUser ? currentUser.role === 'admin' : true;
+
   const [products, setProducts] = useState<Product[]>(() => {
     const saved = localStorage.getItem('dappersfit_products');
     return saved ? JSON.parse(saved) : INITIAL_PRODUCTS;
@@ -56,7 +65,9 @@ export default function ProductsPanel() {
   const [newSKU, setNewSKU] = useState('');
   const [newCategory, setNewCategory] = useState('Drone Action Cameras');
   const [newStock, setNewStock] = useState(50);
-  const [newWeight, setNewWeight] = useState(1.0);
+  const [newWeight, setNewWeight] = useState(0.5);
+  const [newPrice, setNewPrice] = useState(0);
+  const [newDescription, setNewDescription] = useState('');
 
   const handleCloseModal = () => {
     setShowAdd(false);
@@ -65,11 +76,17 @@ export default function ProductsPanel() {
     setNewName('');
     setNewSKU('');
     setNewStock(50);
-    setNewWeight(1.0);
+    setNewWeight(0.5);
+    setNewPrice(0);
+    setNewDescription('');
     setNewCategory('Drone Action Cameras');
   };
 
   const handleStartEdit = (product: Product) => {
+    if (!isAdmin) {
+      alert('Administrator access required to edit catalog products.');
+      return;
+    }
     setEditId(product.id);
     setIsEditing(true);
     setNewName(product.name);
@@ -77,17 +94,24 @@ export default function ProductsPanel() {
     setNewCategory(product.category);
     setNewWeight(product.weight);
     setNewStock(product.stock);
+    setNewPrice(product.price || 0);
+    setNewDescription(product.description || '');
     setShowAdd(true);
   };
 
   const handleDeleteProduct = async (id: string) => {
+    if (!isAdmin) {
+      alert('Administrator access required to delete catalog products.');
+      return;
+    }
     if (window.confirm('Are you sure you want to permanently delete this product?')) {
       const updated = products.filter(p => p.id !== id);
       setProducts(updated);
       localStorage.setItem('dappersfit_products', JSON.stringify(updated));
       try {
         await fetch(`/api/products/${id}`, {
-          method: 'DELETE'
+          method: 'DELETE',
+          headers: { 'x-user-role': currentUser?.role || 'admin' }
         });
       } catch (err) {
         console.error('Failed to delete product on server:', err);
@@ -96,6 +120,10 @@ export default function ProductsPanel() {
   };
 
   const handleClearAllProducts = async () => {
+    if (!isAdmin) {
+      alert('Administrator access required to clear catalog data.');
+      return;
+    }
     if (window.confirm('Are you sure you want to permanently clear all products from the database and UI?')) {
       setProducts([]);
       localStorage.setItem('dappersfit_products', '[]');
@@ -119,6 +147,10 @@ export default function ProductsPanel() {
 
   const handleAddProduct = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!isAdmin) {
+      alert('Administrator access required to add or modify products.');
+      return;
+    }
     if (!newName || !newSKU) return;
 
     let targetProduct: Product;
@@ -130,7 +162,9 @@ export default function ProductsPanel() {
         sku: newSKU,
         category: newCategory,
         stock: Number(newStock),
-        weight: Number(newWeight)
+        weight: Number(newWeight),
+        price: Number(newPrice) || 0,
+        description: newDescription || ''
       };
       const updated = products.map(p => p.id === editId ? targetProduct : p);
       setProducts(updated);
@@ -142,7 +176,9 @@ export default function ProductsPanel() {
         sku: newSKU,
         category: newCategory,
         stock: Number(newStock),
-        weight: Number(newWeight)
+        weight: Number(newWeight),
+        price: Number(newPrice) || 0,
+        description: newDescription || ''
       };
       const updated = [targetProduct, ...products];
       setProducts(updated);
@@ -151,7 +187,10 @@ export default function ProductsPanel() {
 
     fetch('/api/products', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 
+        'Content-Type': 'application/json',
+        'x-user-role': currentUser?.role || 'admin'
+      },
       body: JSON.stringify(targetProduct)
     }).catch(err => console.error('Failed to save product on server:', err));
 
@@ -159,32 +198,46 @@ export default function ProductsPanel() {
   };
 
   return (
-    <div className="p-8 max-w-7xl mx-auto space-y-6 font-sans text-slate-100" id="products-panel">
+    <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto space-y-6 font-sans text-slate-100" id="products-panel">
       
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-extrabold tracking-tight text-white">Product Catalog & Stock Registry</h1>
-          <p className="text-sm text-slate-400 mt-1">Manage electronics product catalog, custom weight specifications (kg) & parcel stock registry.</p>
+          <div className="flex items-center gap-2.5">
+            <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-white">Product Catalog & Stock Registry</h1>
+            {isAdmin ? (
+              <span className="px-2.5 py-0.5 bg-amber-500/10 border border-amber-500/30 text-amber-400 text-xs font-bold rounded-full flex items-center gap-1">
+                <Shield className="w-3 h-3" /> Admin Authorized
+              </span>
+            ) : (
+              <span className="px-2.5 py-0.5 bg-slate-800 border border-slate-700 text-slate-400 text-xs font-semibold rounded-full">
+                Staff View (Read-Only)
+              </span>
+            )}
+          </div>
+          <p className="text-xs sm:text-sm text-slate-400 mt-1">Manage electronics product catalog, custom weight specifications (kg) & parcel stock registry.</p>
         </div>
-        <div className="flex items-center gap-2 self-start">
-          <button
-            onClick={handleClearAllProducts}
-            className="px-4 py-2 bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30 font-bold text-sm rounded-xl flex items-center space-x-1.5 transition"
-            title="Clear all product data"
-          >
-            <Trash2 className="w-4 h-4" />
-            <span>Clear Catalog Data</span>
-          </button>
-          <button
-            onClick={() => { setIsEditing(false); setShowAdd(true); }}
-            className="px-4 py-2 bg-sky-500 hover:bg-sky-400 text-slate-950 font-bold text-sm rounded-xl flex items-center space-x-1.5 transition"
-            id="add-product-btn"
-          >
-            <Plus className="w-4 h-4" />
-            <span>Add Product</span>
-          </button>
-        </div>
+        
+        {isAdmin && (
+          <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
+            <button
+              onClick={handleClearAllProducts}
+              className="px-3.5 py-2 bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30 font-bold text-xs sm:text-sm rounded-xl flex items-center space-x-1.5 transition"
+              title="Clear all product data"
+            >
+              <Trash2 className="w-4 h-4" />
+              <span>Clear Catalog</span>
+            </button>
+            <button
+              onClick={() => { setIsEditing(false); setShowAdd(true); }}
+              className="px-4 py-2 bg-[#b8862f] hover:bg-[#a67527] text-white font-bold text-xs sm:text-sm rounded-xl flex items-center space-x-1.5 shadow-md transition"
+              id="add-product-btn"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Add Product</span>
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Filter and Search Bar */}
@@ -200,14 +253,14 @@ export default function ProductsPanel() {
           />
         </div>
 
-        <div className="flex gap-2 w-full md:w-auto overflow-x-auto">
+        <div className="flex gap-2 w-full md:w-auto overflow-x-auto pb-1 sm:pb-0">
           {categories.map(cat => (
             <button
               key={cat}
               onClick={() => setCategoryFilter(cat)}
               className={`px-3 py-1.5 rounded-lg text-xs font-semibold uppercase tracking-wider border transition-all whitespace-nowrap ${
                 categoryFilter === cat
-                  ? 'bg-sky-500 border-sky-500 text-slate-950 font-bold'
+                  ? 'bg-[#b8862f] border-[#b8862f] text-white font-bold'
                   : 'bg-slate-900 border-slate-700 text-slate-300 hover:bg-slate-850'
               }`}
             >
@@ -217,7 +270,7 @@ export default function ProductsPanel() {
         </div>
       </div>
 
-      {/* Grid List */}
+      {/* Desktop / Tablet Grid List */}
       <div className="bg-slate-800 rounded-2xl border border-slate-700 shadow-xl overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
@@ -226,24 +279,36 @@ export default function ProductsPanel() {
                 <th className="px-6 py-4">Item Details</th>
                 <th className="px-6 py-4">SKU Code</th>
                 <th className="px-6 py-4">Category</th>
+                <th className="px-6 py-4">Price (₹)</th>
                 <th className="px-6 py-4">Weight (kg)</th>
                 <th className="px-6 py-4">Warehouse Stock</th>
                 <th className="px-6 py-4 text-center">Status</th>
-                <th className="px-6 py-4 text-right">Actions</th>
+                {isAdmin && <th className="px-6 py-4 text-right">Actions</th>}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-700 text-slate-300 text-sm">
               {filtered.map(product => {
                 const isLowStock = product.stock <= 15;
+                const isAC = product.sku?.trim().toLowerCase() === 'ac' || product.name?.trim().toLowerCase() === 'ac';
                 return (
                   <tr key={product.id} className="hover:bg-slate-700/30 transition duration-150">
                     <td className="px-6 py-4">
                       <div className="flex items-center space-x-3">
-                        <div className="p-2 bg-slate-900 rounded-lg text-sky-400">
+                        <div className="p-2 bg-slate-900 rounded-lg text-[#b8862f]">
                           <Boxes className="w-5 h-5" />
                         </div>
                         <div>
-                          <span className="font-bold text-slate-200 block">{product.name}</span>
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-bold text-slate-200 block">{product.name}</span>
+                            {isAC && (
+                              <span className="px-1.5 py-0.5 text-[9px] font-mono font-bold bg-[#b8862f]/20 border border-[#b8862f]/40 text-[#d4af37] rounded">
+                                AC
+                              </span>
+                            )}
+                          </div>
+                          {product.description && (
+                            <span className="text-xs text-slate-400 block truncate max-w-xs">{product.description}</span>
+                          )}
                         </div>
                       </div>
                     </td>
@@ -253,8 +318,14 @@ export default function ProductsPanel() {
                         {product.category}
                       </span>
                     </td>
-                    <td className="px-6 py-4 font-mono text-xs text-slate-300 font-bold">
-                      {product.weight} kg
+                    <td className="px-6 py-4 font-mono text-sm text-slate-100 font-bold">
+                      ₹{(product.price || 0).toLocaleString()}
+                    </td>
+                    <td className="px-6 py-4 font-mono text-xs text-slate-200 font-bold">
+                      <span className={isAC ? 'text-amber-400 font-black' : ''}>
+                        {product.weight} kg
+                      </span>
+                      {isAC && <span className="text-[10px] text-amber-500/80 block font-normal">AC Weight: 0.5 kg</span>}
                     </td>
                     <td className="px-6 py-4 font-mono">
                       <div className="flex items-center space-x-2">
@@ -271,32 +342,34 @@ export default function ProductsPanel() {
                         {isLowStock ? 'Reorder Alert' : 'In Stock'}
                       </span>
                     </td>
-                    <td className="px-6 py-4 text-right">
-                      <div className="flex items-center justify-end space-x-2">
-                        <button
-                          onClick={() => handleStartEdit(product)}
-                          className="p-1.5 hover:bg-slate-700 text-slate-400 hover:text-sky-400 rounded-lg transition"
-                          title="Edit Product"
-                        >
-                          <Edit className="w-4 h-4" />
-                        </button>
-                        <button
-                          onClick={() => handleDeleteProduct(product.id)}
-                          className="p-1.5 hover:bg-slate-700 text-slate-400 hover:text-red-400 rounded-lg transition"
-                          title="Delete Product"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </td>
+                    {isAdmin && (
+                      <td className="px-6 py-4 text-right">
+                        <div className="flex items-center justify-end space-x-2">
+                          <button
+                            onClick={() => handleStartEdit(product)}
+                            className="p-1.5 hover:bg-slate-700 text-slate-400 hover:text-amber-400 rounded-lg transition"
+                            title="Edit Product Details"
+                          >
+                            <Edit className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => handleDeleteProduct(product.id)}
+                            className="p-1.5 hover:bg-slate-700 text-slate-400 hover:text-red-400 rounded-lg transition"
+                            title="Delete Product"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </td>
+                    )}
                   </tr>
                 );
               })}
 
               {filtered.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="px-6 py-12 text-center text-slate-500">
-                    No products found. Add a new electronic product or SKU to populate the catalog.
+                  <td colSpan={isAdmin ? 8 : 7} className="px-6 py-12 text-center text-slate-500">
+                    No products found. {isAdmin ? 'Add a new product or SKU to populate the catalog.' : 'No catalog items available.'}
                   </td>
                 </tr>
               )}
@@ -305,34 +378,42 @@ export default function ProductsPanel() {
         </div>
       </div>
 
-      {/* Add Product Modal Overlay */}
-      {showAdd && (
-        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <form onSubmit={handleAddProduct} className="bg-slate-900 border border-slate-700 rounded-2xl p-6 w-full max-w-md space-y-4">
-            <h3 className="text-lg font-bold text-white">{isEditing ? 'Edit Product SKU' : 'Register New Product SKU'}</h3>
+      {/* Add / Edit Product Modal Overlay (Admin Only) */}
+      {showAdd && isAdmin && (
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center z-50 p-4 overflow-y-auto">
+          <form onSubmit={handleAddProduct} className="bg-slate-900 border border-slate-700 rounded-2xl p-6 w-full max-w-lg space-y-4 my-8">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                <Boxes className="w-5 h-5 text-amber-400" />
+                <span>{isEditing ? 'Edit Catalog Product' : 'Register New Catalog Product'}</span>
+              </h3>
+              <span className="text-[10px] font-mono px-2 py-0.5 bg-amber-500/10 text-amber-400 border border-amber-500/20 rounded font-bold uppercase">
+                Admin Mode
+              </span>
+            </div>
             
             <div className="space-y-1">
-              <label className="text-xs font-semibold text-slate-400">Product Name</label>
+              <label className="text-xs font-semibold text-slate-400">Product Name *</label>
               <input
                 type="text"
                 required
                 placeholder="e.g., Drone 4K Action Camera Ultra HD"
                 value={newName}
                 onChange={(e) => setNewName(e.target.value)}
-                className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-slate-100 text-sm outline-none focus:border-sky-400"
+                className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-slate-100 text-sm outline-none focus:border-amber-400"
               />
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-1">
-                <label className="text-xs font-semibold text-slate-400">SKU Code</label>
+                <label className="text-xs font-semibold text-slate-400">SKU Code *</label>
                 <input
                   type="text"
                   required
-                  placeholder="e.g., DRN-ACT-4K"
+                  placeholder="e.g., ac, DRN-ACT-4K"
                   value={newSKU}
                   onChange={(e) => setNewSKU(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-slate-100 text-sm outline-none focus:border-sky-400"
+                  className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-slate-100 text-sm outline-none focus:border-amber-400 font-mono"
                 />
               </div>
               <div className="space-y-1">
@@ -340,7 +421,7 @@ export default function ProductsPanel() {
                 <select
                   value={newCategory}
                   onChange={(e) => setNewCategory(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-slate-300 text-sm outline-none focus:border-sky-400"
+                  className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-slate-300 text-sm outline-none focus:border-amber-400"
                 >
                   <option value="Drone Action Cameras">Drone Action Cameras</option>
                   <option value="Water Wash Guns">Water Wash Guns</option>
@@ -353,44 +434,68 @@ export default function ProductsPanel() {
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div className="space-y-1">
-                <label className="text-xs font-semibold text-slate-400">Weight (kg)</label>
+                <label className="text-xs font-semibold text-slate-400">Price (₹)</label>
+                <input
+                  type="number"
+                  min="0"
+                  step="1"
+                  placeholder="e.g., 1499"
+                  value={newPrice}
+                  onChange={(e) => setNewPrice(Number(e.target.value))}
+                  className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-slate-100 text-sm outline-none focus:border-amber-400 font-mono"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-slate-400">Weight (kg) *</label>
                 <input
                   type="number"
                   step="0.01"
                   required
-                  placeholder="e.g., 1.0"
+                  placeholder="e.g., 0.5"
                   value={newWeight}
                   onChange={(e) => setNewWeight(Number(e.target.value))}
-                  className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-slate-100 text-sm outline-none focus:border-sky-400"
+                  className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-slate-100 text-sm outline-none focus:border-amber-400 font-mono"
                 />
               </div>
               <div className="space-y-1">
-                <label className="text-xs font-semibold text-slate-400">Stock (Units)</label>
+                <label className="text-xs font-semibold text-slate-400">Warehouse Stock</label>
                 <input
                   type="number"
                   required
+                  min="0"
                   value={newStock}
                   onChange={(e) => setNewStock(Number(e.target.value))}
-                  className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-slate-100 text-sm outline-none focus:border-sky-400"
+                  className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-slate-100 text-sm outline-none focus:border-amber-400 font-mono"
                 />
               </div>
             </div>
 
-            <div className="flex justify-end space-x-2 pt-4">
+            <div className="space-y-1">
+              <label className="text-xs font-semibold text-slate-400">Description (Optional)</label>
+              <textarea
+                rows={2}
+                placeholder="Product description, technical specifications or notes..."
+                value={newDescription}
+                onChange={(e) => setNewDescription(e.target.value)}
+                className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-slate-100 text-sm outline-none focus:border-amber-400 resize-none"
+              />
+            </div>
+
+            <div className="flex justify-end space-x-2 pt-4 border-t border-slate-800">
               <button
                 type="button"
                 onClick={handleCloseModal}
-                className="px-4 py-2 border border-slate-700 rounded-lg text-xs font-bold hover:bg-slate-800"
+                className="px-4 py-2 border border-slate-700 rounded-lg text-xs font-bold hover:bg-slate-800 text-slate-300 transition"
               >
                 Cancel
               </button>
               <button
                 type="submit"
-                className="px-4 py-2 bg-sky-500 hover:bg-sky-400 text-slate-950 font-bold text-xs rounded-lg"
+                className="px-5 py-2 bg-[#b8862f] hover:bg-[#a67527] text-white font-bold text-xs rounded-lg shadow-md transition"
               >
-                {isEditing ? 'Save Changes' : 'Create SKU'}
+                {isEditing ? 'Save Changes' : 'Register Product SKU'}
               </button>
             </div>
           </form>

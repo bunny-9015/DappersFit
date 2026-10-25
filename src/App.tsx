@@ -48,7 +48,7 @@ const DEFAULT_SETTINGS: AppSettings = {
 export default function App() {
   const pwa = usePWA();
 
-  const [user, setUser] = useState<{ name: string; email: string; role: 'admin' | 'employee' } | null>(() => {
+  const [user, setUser] = useState<{ name: string; email: string; role: 'admin' | 'employee'; phone?: string } | null>(() => {
     const saved = localStorage.getItem('dappersfit_user');
     return saved ? JSON.parse(saved) : null;
   });
@@ -59,7 +59,7 @@ export default function App() {
     try {
       const params = new URLSearchParams(window.location.search);
       const tabParam = params.get('tab');
-      if (tabParam) return tabParam;
+      if (tabParam && tabParam !== 'courier-booking') return tabParam;
     } catch {}
     return 'orders';
   });
@@ -798,7 +798,10 @@ export default function App() {
         : (existingOrder ? existingOrder.createdByEmployeeId : (user ? user.email : 'System')),
       createdByEmployeeName: parsed.createdByEmployeeName !== undefined 
         ? parsed.createdByEmployeeName 
-        : (existingOrder ? existingOrder.createdByEmployeeName : (user ? user.name : 'System'))
+        : (existingOrder ? existingOrder.createdByEmployeeName : (user ? user.name : 'System')),
+      createdByEmployeePhone: parsed.createdByEmployeePhone !== undefined
+        ? parsed.createdByEmployeePhone
+        : (existingOrder ? existingOrder.createdByEmployeePhone : (user ? user.phone : undefined))
     };
 
     try {
@@ -1047,37 +1050,15 @@ export default function App() {
             />
           )}
 
-          {activeTab === 'courier-booking' && (
-            <div className="w-full h-full p-4 md:p-6 bg-[#0f172a] text-white flex flex-col overflow-y-auto" id="courier-booking-tab-container">
-              <div className="flex items-center justify-between mb-4 pb-2 border-b border-slate-800">
-                <div className="flex items-center gap-2">
-                  <span className="text-xs uppercase font-mono tracking-wider text-slate-400">Integrated Vanilla JS Module</span>
-                </div>
-                <a 
-                  href="/courier-booking" 
-                  target="_blank" 
-                  rel="noreferrer" 
-                  className="text-xs text-sky-400 hover:text-sky-300 flex items-center gap-1 font-medium bg-slate-800 px-3 py-1.5 rounded-lg border border-slate-700"
-                >
-                  Open Standalone Full Page &nearr;
-                </a>
-              </div>
-              <iframe 
-                src="/courier-booking" 
-                className="w-full flex-1 min-h-[960px] border border-slate-800 rounded-xl shadow-lg bg-[#0f172a]"
-                title="Shiprocket Courier Booking Engine"
-              />
-            </div>
-          )}
-
           {activeTab === 'parser' && (
             <OrderParser 
               onImportOrder={handleImportOrder} 
+              existingOrders={orders}
             />
           )}
 
           {activeTab === 'products' && (
-            <ProductsPanel />
+            <ProductsPanel currentUser={user} />
           )}
 
           {activeTab === 'replacements' && (

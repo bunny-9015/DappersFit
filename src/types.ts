@@ -50,6 +50,7 @@ export interface Order {
   paymentMethod?: string;
   createdByEmployeeId?: string;
   createdByEmployeeName?: string;
+  createdByEmployeePhone?: string;
   productAdvance?: boolean;
   productAdvanceIncentive?: number;
   productAttached?: boolean;
