@@ -270,8 +270,94 @@ export default function ProductsPanel({ currentUser }: ProductsPanelProps) {
         </div>
       </div>
 
+      {/* Mobile / Responsive Cards List (Visible on small screens) */}
+      <div className="block md:hidden space-y-3">
+        {filtered.map(product => {
+          const isLowStock = product.stock <= 15;
+          const isAC = product.sku?.trim().toLowerCase() === 'ac' || product.name?.trim().toLowerCase() === 'ac';
+          return (
+            <div key={product.id} className="bg-slate-800 border border-slate-700 rounded-xl p-4 shadow-lg space-y-3">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-center space-x-3">
+                  <div className="p-2 bg-slate-900 rounded-lg text-[#b8862f]">
+                    <Boxes className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="font-bold text-slate-100 text-sm">{product.name}</span>
+                      {isAC && (
+                        <span className="px-1.5 py-0.5 text-[9px] font-mono font-bold bg-[#b8862f]/20 border border-[#b8862f]/40 text-[#d4af37] rounded">
+                          AC
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2 mt-0.5">
+                      <span className="font-mono text-xs font-bold text-[#b8862f]">{product.sku}</span>
+                      <span className="text-[10px] text-slate-400">• {product.category}</span>
+                    </div>
+                  </div>
+                </div>
+                <span className={`px-2 py-0.5 text-[10px] font-mono border font-semibold rounded-full uppercase tracking-wider shrink-0 ${
+                  isLowStock 
+                    ? 'bg-amber-500/10 border-amber-500/20 text-amber-400' 
+                    : 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
+                }`}>
+                  {isLowStock ? 'Reorder' : 'In Stock'}
+                </span>
+              </div>
+
+              {product.description && (
+                <p className="text-xs text-slate-400 line-clamp-2">{product.description}</p>
+              )}
+
+              <div className="grid grid-cols-3 gap-2 bg-slate-900/60 p-2.5 rounded-lg text-xs font-mono border border-slate-750">
+                <div>
+                  <span className="text-slate-500 text-[10px] block">Price</span>
+                  <span className="font-bold text-slate-200">₹{(product.price || 0).toLocaleString()}</span>
+                </div>
+                <div>
+                  <span className="text-slate-500 text-[10px] block">Weight</span>
+                  <span className={`font-bold ${isAC ? 'text-amber-400' : 'text-slate-200'}`}>{product.weight} kg</span>
+                </div>
+                <div>
+                  <span className="text-slate-500 text-[10px] block">Stock</span>
+                  <span className={`font-bold ${isLowStock ? 'text-amber-400' : 'text-slate-200'}`}>{product.stock} units</span>
+                </div>
+              </div>
+
+              {isAdmin && (
+                <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-700/60">
+                  <button
+                    onClick={() => handleStartEdit(product)}
+                    className="flex-1 py-1.5 px-3 bg-slate-700/60 hover:bg-slate-700 border border-slate-600 text-slate-200 hover:text-amber-300 font-bold text-xs rounded-lg flex items-center justify-center gap-1.5 transition"
+                    title="Edit Product Details"
+                  >
+                    <Edit className="w-3.5 h-3.5 text-amber-400" />
+                    <span>Edit</span>
+                  </button>
+                  <button
+                    onClick={() => handleDeleteProduct(product.id)}
+                    className="flex-1 py-1.5 px-3 bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-400 hover:text-red-300 font-bold text-xs rounded-lg flex items-center justify-center gap-1.5 transition"
+                    title="Delete Product"
+                  >
+                    <Trash2 className="w-3.5 h-3.5 text-red-400" />
+                    <span>Delete</span>
+                  </button>
+                </div>
+              )}
+            </div>
+          );
+        })}
+
+        {filtered.length === 0 && (
+          <div className="bg-slate-800 border border-slate-700 rounded-xl p-8 text-center text-slate-500 text-xs">
+            No products found. {isAdmin ? 'Add a new product to populate the catalog.' : 'No catalog items available.'}
+          </div>
+        )}
+      </div>
+
       {/* Desktop / Tablet Grid List */}
-      <div className="bg-slate-800 rounded-2xl border border-slate-700 shadow-xl overflow-hidden">
+      <div className="hidden md:block bg-slate-800 rounded-2xl border border-slate-700 shadow-xl overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>

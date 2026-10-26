@@ -2740,7 +2740,7 @@ app.post('/api/products', async (req, res) => {
   if (!prod.id) {
     prod.id = `p-${Date.now()}`;
   }
-  const existingIdx = mockProducts.findIndex(p => p && String(p.id) === String(prod.id));
+  const existingIdx = mockProducts.findIndex(p => p && (String(p.id) === String(prod.id) || (prod.sku && String(p.sku || '').trim().toLowerCase() === String(prod.sku).trim().toLowerCase())));
   if (existingIdx >= 0) {
     mockProducts[existingIdx] = { ...mockProducts[existingIdx], ...prod };
   } else {
@@ -2760,13 +2760,43 @@ app.post('/api/products', async (req, res) => {
   res.json({ success: true, product: prod, products: mockProducts });
 });
 
+app.put('/api/products/:id', async (req, res) => {
+  const role = (req.headers['x-user-role'] || req.body?.userRole || '').toString().toLowerCase();
+  if (role === 'employee' || role === 'staff') {
+    return res.status(403).json({ success: false, error: 'Unauthorized: Only authorized administrators can edit products.' });
+  }
+  const { id } = req.params;
+  const prod = { ...req.body, id: req.body?.id || id };
+  const targetId = String(id).trim();
+
+  const existingIdx = mockProducts.findIndex(p => p && (String(p.id).trim() === targetId || String(p.sku || '').trim().toLowerCase() === targetId.toLowerCase()));
+  if (existingIdx >= 0) {
+    mockProducts[existingIdx] = { ...mockProducts[existingIdx], ...prod };
+  } else {
+    mockProducts.unshift(prod);
+  }
+
+  if (isFirebaseEnabled && firestoreDb) {
+    try {
+      await setDoc(doc(firestoreDb, 'products', String(prod.id)), sanitizeForFirestore(prod));
+      console.log(`[Firebase] Updated product ${prod.id} (${prod.name}) in Firestore.`);
+    } catch (err) {
+      console.error('[Firebase] Direct update of product failed:', err);
+    }
+  }
+
+  saveProductsToFile();
+  res.json({ success: true, product: prod, products: mockProducts });
+});
+
 app.delete('/api/products/:id', async (req, res) => {
   const role = (req.headers['x-user-role'] || req.body?.userRole || '').toString().toLowerCase();
   if (role === 'employee' || role === 'staff') {
     return res.status(403).json({ success: false, error: 'Unauthorized: Only authorized administrators can delete products.' });
   }
   const { id } = req.params;
-  mockProducts = mockProducts.filter(p => p && String(p.id) !== String(id));
+  const targetId = String(id).trim();
+  mockProducts = mockProducts.filter(p => p && String(p.id).trim() !== targetId && String(p.sku || '').trim().toLowerCase() !== targetId.toLowerCase());
 
   if (isFirebaseEnabled && firestoreDb) {
     try {
