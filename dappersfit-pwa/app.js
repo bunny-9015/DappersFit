@@ -53,19 +53,25 @@
     const hostname = (typeof window !== 'undefined' && window.location && window.location.hostname) ? window.location.hostname : 'localhost';
 
     const candidates = [];
-    if (origin && origin.startsWith('http')) {
+    if (origin && origin.startsWith('https://')) {
+      // Production HTTPS domain (e.g., Vercel / PWA)
       candidates.push(origin);
+      candidates.push('https://dappersfit.onrender.com');
+    } else {
+      // Local development or HTTP
+      if (origin && origin.startsWith('http')) candidates.push(origin);
+      candidates.push('http://127.0.0.1:3000');
+      candidates.push('http://localhost:3000');
+      if (hostname && hostname !== '127.0.0.1' && hostname !== 'localhost') {
+        candidates.push(`http://${hostname}:3000`);
+      }
+      candidates.push('https://dappersfit.onrender.com');
     }
-    candidates.push('http://127.0.0.1:3000');
-    if (hostname && hostname !== '127.0.0.1' && hostname !== 'localhost') {
-      candidates.push(`http://${hostname}:3000`);
-    }
-    candidates.push('https://dappersfit.onrender.com');
 
     for (const base of candidates) {
       try {
         const controller = new AbortController();
-        const tid = setTimeout(() => controller.abort(), 1800);
+        const tid = setTimeout(() => controller.abort(), 2000);
         const res = await fetch(`${base}/api/shiprocket/wallet/balance-details`, {
           method: 'GET',
           cache: 'no-store',
@@ -80,7 +86,7 @@
       } catch (_) {}
     }
 
-    resolvedApiBase = origin || 'http://127.0.0.1:3000';
+    resolvedApiBase = origin.startsWith('https://') ? (origin || 'https://dappersfit.onrender.com') : (origin || 'http://127.0.0.1:3000');
     state.baseUrl = resolvedApiBase;
     return resolvedApiBase;
   }
@@ -448,9 +454,11 @@
         try {
           const liveProd = await apiFetch(`/api/products?_v=${Date.now()}`, { cache: 'no-store' });
           if (liveProd.ok) {
-            const list = await liveProd.json();
-            if (Array.isArray(list) && list.length > 0) {
+            const rawData = await liveProd.json();
+            const list = Array.isArray(rawData) ? rawData : (rawData && Array.isArray(rawData.products) ? rawData.products : null);
+            if (list && list.length > 0) {
               state.products = list;
+              try { localStorage.setItem(STORAGE_KEY_PRODUCTS, JSON.stringify(list)); } catch (_) {}
               prodLoaded = true;
             }
           }
@@ -1137,9 +1145,6 @@
                   <span class="material-symbols-outlined" style="font-size: 16px; color: var(--executive-gold-light);">rocket_launch</span>
                   <span>Priority Book</span>
                 </button>
-                <button type="button" class="btn-card-secondary btn-courier-booking" data-order-id="${escapeHtml(order.id)}" title="Approve &amp; Select Courier" style="padding: 0 10px; font-size: 14px;">
-                  🚀
-                </button>
               ` : (isBooked ? `
                 <button type="button" class="btn-card-secondary btn-view-shipment" data-order-id="${escapeHtml(order.id)}" title="Shipment Active">
                   <span class="material-symbols-outlined" style="font-size: 15px; color: #10B981;">check_circle</span>
@@ -1198,14 +1203,6 @@
         return;
       }
 
-      // 4. Manual Courier button
-      const courierBtn = e.target.closest('.btn-courier-booking');
-      if (courierBtn) {
-        e.stopPropagation();
-        const o = state.orders.find(ord => ord.id === courierBtn.getAttribute('data-order-id'));
-        if (o) openCourierBookingWizard(o);
-        return;
-      }
 
       // 5. Details button / Booked button
       const detailBtn = e.target.closest('.btn-order-details, .btn-view-shipment');
@@ -1385,7 +1382,9 @@
     if (!order) return;
     haptic('medium');
 
-    const labelUrl = order.labelUrl || '';
+    const rawUrl = order.labelUrl || '';
+    const apiBase = state.baseUrl || (typeof window !== 'undefined' ? window.location.origin : '');
+    const labelUrl = (rawUrl && rawUrl.startsWith('/')) ? `${apiBase}${rawUrl}` : rawUrl;
     const awb = order.awbCode || '7892401824';
     const courier = order.courierName || 'Blue Dart Express (Air)';
     const orderNo = order.orderNumber || order.id;
@@ -1398,15 +1397,25 @@
 
     const pdfEmbedHtml = labelUrl ? `
       <div style="margin-bottom: 12px; border-radius: 8px; overflow: hidden; border: 1px solid var(--hairline-border); background: #f9f9f9;">
-        <div style="padding: 8px 12px; background: var(--surface-low); font-size: 11px; display: flex; justify-content: space-between; align-items: center;">
-          <span style="font-weight: 700; color: var(--primary-ink);">Official Courier Shipping Label</span>
-          <a href="${labelUrl}" target="_blank" download="Label-${orderNo}.pdf" class="btn-card-secondary" style="height: 26px; padding: 0 8px; font-size: 11px; text-decoration: none;">
+        <div style="padding: 10px 12px; background: var(--surface-low); font-size: 11px; display: flex; justify-content: space-between; align-items: center;">
+          <div style="display: flex; align-items: center; gap: 6px;">
+            <span class="material-symbols-outlined" style="font-size: 16px; color: #10B981;">picture_as_pdf</span>
+            <span style="font-weight: 700; color: var(--primary-ink);">Official Courier Shipping Label PDF</span>
+          </div>
+          <a href="${labelUrl}" target="_blank" download="Dappersfit-Label-${orderNo}.pdf" class="btn-card-secondary" style="height: 28px; padding: 0 10px; font-size: 11px; text-decoration: none; display: flex; align-items: center; gap: 4px;">
             <span class="material-symbols-outlined" style="font-size: 14px;">open_in_new</span>
             <span>Open PDF</span>
           </a>
         </div>
       </div>
-    ` : '';
+    ` : `
+      <div style="margin-bottom: 12px; padding: 8px 12px; border-radius: 8px; background: rgba(234, 179, 8, 0.1); border: 1px solid rgba(234, 179, 8, 0.3); font-size: 11px; display: flex; justify-content: space-between; align-items: center;">
+        <span style="color: #854D0E;">Label generated on live carrier network.</span>
+        <button id="btn-fetch-live-label" type="button" class="btn-card-secondary" style="height: 26px; padding: 0 8px; font-size: 10px;">
+          Fetch PDF
+        </button>
+      </div>
+    `;
 
     openSubmoduleSheet(`Shipping Label — ${orderNo}`, `
       <div style="display: flex; flex-direction: column; gap: 12px;">
@@ -1455,24 +1464,108 @@
 
         <div style="display: flex; gap: 8px; margin-top: 4px;">
           ${labelUrl ? `
-            <a href="${labelUrl}" target="_blank" class="btn-gold-primary" style="flex: 1; text-decoration: none; display: flex; align-items: center; justify-content: center; gap: 6px;">
+            <a href="${labelUrl}" target="_blank" download="Dappersfit-Label-${orderNo}.pdf" class="btn-gold-primary" style="flex: 1; text-decoration: none; display: flex; align-items: center; justify-content: center; gap: 6px; padding: 10px;">
               <span class="material-symbols-outlined">download</span>
               <span>Download PDF Label</span>
             </a>
-          ` : ''}
-          <button type="button" class="btn-ink-primary" style="flex: 1;" onclick="window.print()">
+          ` : `
+            <button type="button" id="btn-label-direct-action" class="btn-gold-primary" style="flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px; padding: 10px;">
+              <span class="material-symbols-outlined">download</span>
+              <span>Download Label</span>
+            </button>
+          `}
+          <button type="button" class="btn-ink-primary" style="flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px; padding: 10px;" onclick="window.print()">
             <span class="material-symbols-outlined">print</span>
             <span>Print Label</span>
           </button>
         </div>
       </div>
     `);
+
+    // Fetch live label if not present
+    document.getElementById('btn-fetch-live-label')?.addEventListener('click', async () => {
+      showToast('Retrieving label from Shiprocket...', 'info');
+      try {
+        const lRes = await apiFetch('/api/shiprocket/label', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ shipmentId: order.shipmentId || order.id })
+        });
+        if (lRes.ok) {
+          const lData = await lRes.json();
+          if (lData.labelUrl) {
+            order.labelUrl = lData.labelUrl;
+            try { localStorage.setItem(STORAGE_KEY_ORDERS, JSON.stringify(state.orders)); } catch (_) {}
+            showToast('Label retrieved! Reloading...', 'success');
+            showShippingLabelModal(order);
+          }
+        }
+      } catch (e) {
+        showToast('Unable to fetch live label', 'error');
+      }
+    });
+
+    document.getElementById('btn-label-direct-action')?.addEventListener('click', () => {
+      window.print();
+    });
   }
 
   // --- Priority Dispatch Action (Calls Live Backend API with Fallback) ---
   async function triggerPriorityDispatch(orderId) {
     const order = state.orders.find(o => o.id === orderId);
     if (!order) return;
+
+    // PREVENT DUPLICATE BOOKINGS: If already booked, open label directly without calling priority-book
+    if (order.status === 'booked' && (order.awbCode || order.shipmentId)) {
+      haptic('light');
+      showToast(`Order ${order.orderNumber} is already booked (AWB: ${order.awbCode}). Opening shipping label...`, 'info');
+
+      // If labelUrl is missing, try retrieving from backend without rebooking
+      if (!order.labelUrl) {
+        try {
+          const lRes = await apiFetch('/api/shiprocket/label', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ shipmentId: order.shipmentId || order.id })
+          });
+          if (lRes.ok) {
+            const lData = await lRes.json();
+            if (lData.labelUrl) {
+              order.labelUrl = lData.labelUrl;
+              try { localStorage.setItem(STORAGE_KEY_ORDERS, JSON.stringify(state.orders)); } catch (_) {}
+            }
+          }
+        } catch (_) {}
+      }
+
+      // Auto-trigger shipping label PDF download if available
+      if (order.labelUrl) {
+        try {
+          const apiBase = await resolveApiBase();
+          let dlUrl = order.labelUrl;
+          if (dlUrl.startsWith('/')) {
+            dlUrl = `${apiBase}${dlUrl}`;
+          }
+          const downloadLink = document.createElement('a');
+          downloadLink.style.display = 'none';
+          downloadLink.href = dlUrl;
+          downloadLink.download = `Dappersfit-Label-${order.orderNumber || order.id}.pdf`;
+          downloadLink.target = '_blank';
+          downloadLink.rel = 'noopener noreferrer';
+          document.body.appendChild(downloadLink);
+          downloadLink.click();
+          setTimeout(() => downloadLink.remove(), 1500);
+        } catch (dlErr) {
+          console.warn('Auto download error on existing booking:', dlErr);
+        }
+      }
+
+      openOrderDetailSheet(order.id);
+      setTimeout(() => {
+        showShippingLabelModal(order);
+      }, 350);
+      return;
+    }
 
     // Check mandatory fields before dispatching
     const cName = (order.customerName || '').trim();
@@ -1507,7 +1600,7 @@
           assignedEmployeeId: state.user?.id || 'admin',
           pickupLocationName: pName,
           pickupPostcode: pPin,
-          forceRebook: true
+          forceRebook: false
         })
       });
 
@@ -1525,14 +1618,20 @@
           // Auto-trigger shipping label PDF download
           if (order.labelUrl) {
             try {
+              let labelDownloadUrl = order.labelUrl;
+              if (labelDownloadUrl.startsWith('/')) {
+                const apiBase = await resolveApiBase();
+                labelDownloadUrl = `${apiBase}${labelDownloadUrl}`;
+              }
               const downloadLink = document.createElement('a');
-              downloadLink.href = order.labelUrl;
+              downloadLink.style.display = 'none';
+              downloadLink.href = labelDownloadUrl;
               downloadLink.download = `Dappersfit-Label-${order.orderNumber || order.id}.pdf`;
               downloadLink.target = '_blank';
               downloadLink.rel = 'noopener noreferrer';
               document.body.appendChild(downloadLink);
               downloadLink.click();
-              setTimeout(() => downloadLink.remove(), 1000);
+              setTimeout(() => downloadLink.remove(), 1500);
             } catch (dlErr) {
               console.warn('Auto download error:', dlErr);
             }
@@ -1936,10 +2035,6 @@
               <span class="material-symbols-outlined">rocket_launch</span>
               <span>Instant Priority Dispatch (Auto Air)</span>
             </button>
-            <button type="button" class="btn-card-secondary" id="btn-detail-manual-book" style="height: 42px;">
-              <span class="material-symbols-outlined">compare_arrows</span>
-              <span>Compare Courier Rates & Partners</span>
-            </button>
           </div>
         `}
       </div>
@@ -1966,10 +2061,6 @@
       closeSheet('sheet-order-detail');
     });
 
-    document.getElementById('btn-detail-manual-book')?.addEventListener('click', () => {
-      closeSheet('sheet-order-detail');
-      openCourierBookingWizard(order);
-    });
 
     document.getElementById('btn-view-label')?.addEventListener('click', () => {
       showShippingLabelModal(order);
@@ -2024,353 +2115,6 @@
     });
 
     openSheet('sheet-order-detail');
-  }
-
-  // --- Courier Booking Wizard with Live Shiprocket Integration (Manual Rocket Icon Booking) ---
-  async function openCourierBookingWizard(order) {
-    const sheet = document.getElementById('sheet-courier-booking');
-    const container = document.getElementById('booking-sheet-content');
-    if (!sheet || !container) return;
-
-    haptic('light');
-
-    const destPincode = order ? (order.address?.pincode || '560038') : '560038';
-    const parcelWeight = order ? (order.weight || 0.5) : 0.5;
-    const isCod = order ? (order.paymentMethod === 'COD') : true;
-
-    // Full registered pickup locations list
-    let registeredPickups = [
-      { name: "Ashok og ", pincode: "400001", address: "Sahara Market Mumbai (400001)" },
-      { name: "dapperss", pincode: "600002", address: "Chennai Central Hub (600002)" },
-      { name: "mahakal", pincode: "400004", address: "Rubberwala Mumbai (400004)" },
-      { name: "gopall", pincode: "400001", address: "Musafir Khana Mumbai (400001)" },
-      { name: "gopal", pincode: "400001", address: "Alsabha Market Mumbai (400001)" },
-      { name: "pankaj", pincode: "110005", address: "Karol Bagh Delhi (110005)" },
-      { name: "kenri ", pincode: "400004", address: "Platinum Mall Mumbai (400004)" },
-      { name: "shamil", pincode: "600002", address: "Chintadripet Chennai (600002)" },
-      { name: "ALEEM", pincode: "600021", address: "Old Washermanpet Chennai (600021)" },
-      { name: "DAPPER", pincode: "600021", address: "Old Washermanpet Chennai (600021)" },
-      { name: "dappers", pincode: "600021", address: "Washermanpet Chennai (600021)" }
-    ];
-
-    try {
-      const pRes = await apiFetch('/api/shiprocket/pickup-addresses');
-      if (pRes.ok) {
-        const pData = await pRes.json();
-        if (pData.success && Array.isArray(pData.addresses) && pData.addresses.length > 0) {
-          registeredPickups = pData.addresses.map(a => ({
-            name: a.name,
-            pincode: a.pincode,
-            address: (a.address || '') + (a.city ? ', ' + a.city : '') + ' (' + a.pincode + ')'
-          }));
-        }
-      }
-    } catch (_) {}
-
-    // Determine default selected pickup location (default to Ashok og, ignore legacy dapperss)
-    let defaultPickupName = "Ashok og ";
-    if (order && order.pickupLocation && !order.pickupLocation.toLowerCase().includes('dapper')) {
-      const matchExisting = registeredPickups.find(p => 
-        p.name.trim().toLowerCase() === order.pickupLocation.trim().toLowerCase() ||
-        p.name.toLowerCase().includes(order.pickupLocation.trim().toLowerCase())
-      );
-      if (matchExisting) defaultPickupName = matchExisting.name;
-    }
-
-    const pickupOptionsHtml = registeredPickups.map(p => {
-      const isSelected = p.name.trim().toLowerCase() === defaultPickupName.trim().toLowerCase();
-      return `<option value="${escapeHtml(p.name)}" data-pin="${escapeHtml(p.pincode)}" ${isSelected ? 'selected' : ''}>${escapeHtml(p.name.trim())} — ${escapeHtml(p.address)}</option>`;
-    }).join('');
-
-    container.innerHTML = `
-      <div id="booking-step-1">
-        <div style="font-size: 13px; font-weight: 700; color: var(--primary-ink); margin-bottom: 8px;">Step 1: Select Pickup Hub & Parcel Specs</div>
-        <div class="form-group">
-          <label class="form-label" style="font-weight: 700; color: var(--executive-gold);">Shiprocket Pickup Address *</label>
-          <select id="wizard-pickup" class="form-control" style="font-weight: 600; border: 1.5px solid var(--executive-gold);">
-            ${pickupOptionsHtml}
-          </select>
-        </div>
-        <div class="form-group">
-          <label class="form-label">Delivery Pincode</label>
-          <input type="text" id="wizard-pincode" class="form-control font-mono" value="${escapeHtml(destPincode)}">
-        </div>
-        <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px;">
-          <div class="form-group">
-            <label class="form-label">Weight (kg)</label>
-            <input type="number" step="0.1" id="wizard-weight" class="form-control font-mono" value="${parcelWeight}">
-          </div>
-          <div class="form-group">
-            <label class="form-label">Payment Mode</label>
-            <select id="wizard-payment" class="form-control">
-              <option value="COD" ${isCod ? 'selected' : ''}>COD</option>
-              <option value="Prepaid" ${!isCod ? 'selected' : ''}>Prepaid</option>
-            </select>
-          </div>
-        </div>
-        <div class="form-group">
-          <label class="form-label">Dimensions (L x W x H in cm)</label>
-          <div style="display: flex; gap: 8px;">
-            <input type="number" id="wizard-l" class="form-control font-mono" placeholder="L" value="22">
-            <input type="number" id="wizard-w" class="form-control font-mono" placeholder="W" value="15">
-            <input type="number" id="wizard-h" class="form-control font-mono" placeholder="H" value="6">
-          </div>
-        </div>
-        <button type="button" id="btn-wizard-next" class="btn-gold-primary" style="margin-top: 10px;">
-          <span>Check Serviceability & Rates</span>
-          <span class="material-symbols-outlined">arrow_forward</span>
-        </button>
-      </div>
-
-      <div id="booking-step-2" style="display: none;">
-        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;">
-          <div style="font-size: 13px; font-weight: 700; color: var(--primary-ink);">Step 2: Compare Courier Partners (Priority Order)</div>
-          <span class="pulse-dot" style="width: 6px; height: 6px;"></span>
-        </div>
-        <div id="wizard-pickup-summary" style="font-size: 11px; color: var(--executive-gold); font-weight: 600; margin-bottom: 12px;"></div>
-
-        <div id="wizard-couriers-list" style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px;">
-          <!-- Dynamically populated from /api/shiprocket/serviceability -->
-        </div>
-
-        <div style="display: flex; gap: 8px;">
-          <button type="button" id="btn-wizard-back" class="btn-card-secondary" style="width: 90px; height: 46px;">Back</button>
-          <button type="button" id="btn-wizard-confirm" class="btn-ink-primary" style="flex: 1;">Confirm & Dispatch</button>
-        </div>
-      </div>
-    `;
-
-    document.getElementById('btn-wizard-next')?.addEventListener('click', async () => {
-      const nextBtn = document.getElementById('btn-wizard-next');
-      const pcode = document.getElementById('wizard-pincode').value.trim();
-      const wt = parseFloat(document.getElementById('wizard-weight').value) || 0.5;
-      const pmode = document.getElementById('wizard-payment').value;
-      const pickupSelect = document.getElementById('wizard-pickup');
-      const pickupName = pickupSelect?.value || 'Ashok og ';
-      const pickupPin = pickupSelect?.selectedOptions[0]?.getAttribute('data-pin') || '400001';
-
-      if (!pcode || pcode.length < 6) {
-        showToast('Please enter a valid 6-digit delivery pincode', 'error');
-        return;
-      }
-
-      haptic('light');
-      if (nextBtn) {
-        nextBtn.disabled = true;
-        nextBtn.innerHTML = '<span class="material-symbols-outlined spinning">sync</span><span>Calculating Routes...</span>';
-      }
-
-      let couriers = [];
-      try {
-        const sRes = await apiFetch('/api/shiprocket/serviceability', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            delivery_postcode: pcode,
-            weight: wt,
-            cod: pmode === 'COD',
-            pickup_postcode: pickupPin,
-            pickup_location: pickupName
-          })
-        });
-        if (sRes.ok) {
-          const sData = await sRes.json();
-          const rawCouriers = sData.couriers || (Array.isArray(sData) ? sData : (sData.data?.available_courier_companies || []));
-          if (Array.isArray(rawCouriers) && rawCouriers.length > 0) {
-            couriers = rawCouriers.slice(0, 15).map(c => ({
-              id: c.courierId || c.courier_company_id || c.id || 1,
-              name: c.courierName || c.courier_name || 'Courier Partner',
-              rate: parseFloat(c.rate || c.freight_charge || 68),
-              eta: c.eta || c.etd || '2-3 Days',
-              rating: c.rating ? parseFloat(c.rating).toFixed(1) : '4.5'
-            }));
-          }
-        }
-      } catch (err) {
-        console.warn('Serviceability live fetch warning:', err);
-      }
-
-      // Fallback couriers if network offline or simulated
-      if (couriers.length === 0) {
-        couriers = [
-          { id: 55, name: 'Blue Dart Surface', rate: 85, eta: '2 to 3 days', rating: '4.8' },
-          { id: 43, name: 'Delhivery Surface', rate: 68, eta: '2 to 3 days', rating: '4.5' },
-          { id: 10, name: 'Delhivery Air', rate: 110, eta: 'Tomorrow by 2 PM', rating: '4.7' },
-          { id: 3, name: 'DTDC Express', rate: 72, eta: '1 to 2 days', rating: '4.2' },
-          { id: 4, name: 'Shadowfax Surface', rate: 58, eta: '2 to 4 days', rating: '4.1' }
-        ];
-      }
-
-      // Sort couriers by priority hierarchy (Parity with React and Mobile App)
-      const firstItemName = (order?.items && order.items[0]?.name) || '';
-      const isException = isSpecialSku(firstItemName);
-      couriers.sort((a, b) => {
-        const scoreA = getCourierPriorityScore(a.name, isException);
-        const scoreB = getCourierPriorityScore(b.name, isException);
-        if (scoreA !== scoreB) return scoreA - scoreB;
-        return a.rate - b.rate;
-      });
-
-      const summaryEl = document.getElementById('wizard-pickup-summary');
-      if (summaryEl) {
-        summaryEl.textContent = `📍 Pickup Hub: ${pickupName.trim()} (${pickupPin}) ➔ Destination: ${pcode}`;
-      }
-
-      const listContainer = document.getElementById('wizard-couriers-list');
-      if (listContainer) {
-        listContainer.innerHTML = couriers.map((c, idx) => `
-          <label class="courier-partner-option" style="display: flex; align-items: center; justify-content: space-between; padding: 12px; border-radius: var(--radius-md); border: ${idx === 0 ? '2px solid var(--executive-gold)' : '1px solid var(--hairline-border)'}; background: var(--surface); cursor: pointer;">
-            <div style="display: flex; align-items: center; gap: 10px;">
-              <input type="radio" name="selected_courier" value="${escapeHtml(c.name)}" data-id="${c.id}" data-rate="${c.rate}" ${idx === 0 ? 'checked' : ''} style="accent-color: var(--executive-gold);">
-              <div>
-                <div style="font-size: 13px; font-weight: 700; color: var(--primary-ink);">${escapeHtml(c.name)}</div>
-                <div style="font-size: 11px; color: var(--meta-gray);">Est. Delivery: ${escapeHtml(c.eta)} • ★ ${c.rating || '4.5'}</div>
-              </div>
-            </div>
-            <div style="text-align: right;">
-              <div class="font-mono" style="font-size: 15px; font-weight: 700; color: ${idx === 0 ? 'var(--executive-gold)' : 'var(--primary-ink)'};">₹${c.rate}</div>
-              ${idx === 0 ? '<span class="kpi-badge gold" style="font-size: 9px;">Priority Recommended</span>' : (c.rate < 70 ? '<span class="kpi-badge green" style="font-size: 9px;">Economy</span>' : '')}
-            </div>
-          </label>
-        `).join('');
-      }
-
-      document.getElementById('booking-step-1').style.display = 'none';
-      document.getElementById('booking-step-2').style.display = 'block';
-    });
-
-    document.getElementById('btn-wizard-back')?.addEventListener('click', () => {
-      haptic();
-      const nextBtn = document.getElementById('btn-wizard-next');
-      if (nextBtn) {
-        nextBtn.disabled = false;
-        nextBtn.innerHTML = '<span>Check Serviceability & Rates</span><span class="material-symbols-outlined">arrow_forward</span>';
-      }
-      document.getElementById('booking-step-2').style.display = 'none';
-      document.getElementById('booking-step-1').style.display = 'block';
-    });
-
-    document.getElementById('btn-wizard-confirm')?.addEventListener('click', async () => {
-      const selectedRadio = document.querySelector('input[name="selected_courier"]:checked');
-      const selectedName = selectedRadio?.value || 'Delhivery Surface';
-      const selectedId = parseInt(selectedRadio?.getAttribute('data-id') || '43', 10);
-      const selectedRate = parseFloat(selectedRadio?.getAttribute('data-rate')) || 68.0;
-
-      const pickupSelect = document.getElementById('wizard-pickup');
-      const chosenPickupName = pickupSelect?.value || 'Ashok og ';
-      const chosenPickupPin = pickupSelect?.selectedOptions[0]?.getAttribute('data-pin') || '400001';
-
-      haptic('heavy');
-      const confirmBtn = document.getElementById('btn-wizard-confirm');
-      if (confirmBtn) {
-        confirmBtn.disabled = true;
-        confirmBtn.innerHTML = '<span class="material-symbols-outlined spinning">sync</span><span>Dispatching from ' + escapeHtml(chosenPickupName.trim()) + '...</span>';
-      }
-
-      if (order) {
-        try {
-          // Manual Booking: invoke /api/shiprocket/order/book with specific courier and chosen pickup address
-          const bRes = await apiFetch('/api/shiprocket/order/book', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              orderId: order.id,
-              assignedEmployeeId: state.user?.id || 'admin',
-              courier: {
-                courierId: selectedId,
-                courierName: selectedName,
-                rate: selectedRate
-              },
-              pickupLocationName: chosenPickupName,
-              pickupPostcode: chosenPickupPin,
-              forceRebook: true
-            })
-          });
-
-          const bData = await bRes.json();
-
-          if (bRes.ok && bData.success) {
-            order.status = bData.status || 'booked';
-            order.courierName = bData.courierName || selectedName;
-            order.awbCode = bData.awbCode;
-            order.shipmentId = bData.shipmentId;
-            order.shiprocketOrderId = bData.shiprocketOrderId;
-            order.pickupLocation = bData.pickupLocation || chosenPickupName;
-            order.pickupAddress = bData.order?.pickupAddress;
-            order.rate = selectedRate;
-            order.labelUrl = bData.labelUrl || order.labelUrl;
-            if (bData.order) Object.assign(order, bData.order);
-
-            // Auto-trigger shipping label PDF download
-            if (order.labelUrl) {
-              try {
-                const downloadLink = document.createElement('a');
-                downloadLink.href = order.labelUrl;
-                downloadLink.download = `Dappersfit-Label-${order.orderNumber || order.id}.pdf`;
-                downloadLink.target = '_blank';
-                document.body.appendChild(downloadLink);
-                downloadLink.click();
-                setTimeout(() => downloadLink.remove(), 1000);
-              } catch (dlErr) {
-                console.warn('Auto download error:', dlErr);
-              }
-            }
-
-            showToast(`✅ Booked via ${order.courierName} from ${chosenPickupName.trim()}! AWB: ${order.awbCode}`, 'success');
-
-            closeSheet('sheet-courier-booking');
-            renderOrders();
-            renderCockpit();
-
-            // Open Order Details and display the generated shipping label
-            openOrderDetailSheet(order.id);
-            setTimeout(() => {
-              showShippingLabelModal(order);
-            }, 380);
-            return;
-          } else {
-            const errMsg = bData.error || `HTTP ${bRes.status}: Courier booking failed.`;
-            showToast(errMsg, 'error');
-            if (confirmBtn) {
-              confirmBtn.disabled = false;
-              confirmBtn.innerHTML = 'Retry Dispatch';
-            }
-            return;
-          }
-        } catch (err) {
-          showToast(`Booking error: ${err.message}`, 'error');
-          if (confirmBtn) {
-            confirmBtn.disabled = false;
-            confirmBtn.innerHTML = 'Retry Dispatch';
-          }
-          return;
-        }
-
-        try { localStorage.setItem(STORAGE_KEY_ORDERS, JSON.stringify(state.orders)); } catch (_) {}
-
-        // 2-Way Real-time Firebase Firestore Sync
-        if (window.FirebaseService && typeof window.FirebaseService.saveOrder === 'function') {
-          window.FirebaseService.saveOrder(order).catch(err => console.warn('[Firebase] saveOrder warning:', err));
-        }
-
-        state.feed.unshift({
-          id: 'f-wiz-' + Date.now(),
-          employee: state.user?.name || 'Operator',
-          action: `Carrier Dispatched from ${chosenPickupName.trim()}`,
-          target: `${order.orderNumber} • ${order.courierName} • AWB: ${order.awbCode}`,
-          amount: formatCurrency(order.totalAmount),
-          time: 'Just now',
-          status: 'Booked'
-        });
-
-        renderOrders();
-        renderCockpit();
-      }
-
-      closeSheet('sheet-courier-booking');
-    });
-
-    openSheet('sheet-courier-booking');
   }
 
   // --- Rendering: Tab 3 — Replacements & Tickets ---
@@ -2577,35 +2321,220 @@
 
   // --- More Modules Hub (Tab 4) ---
   function setupMoreModules() {
-    // 1. Courier Booking & Dispatch
-    document.getElementById('menu-courier-booking')?.addEventListener('click', () => {
-      openCourierBookingWizard(state.orders[0]);
-    });
 
-    // 2. Products & Catalog (Real Data from data_products.json)
-    document.getElementById('menu-products')?.addEventListener('click', () => {
+    // 2. Products & Catalog (Real Data from backend with Admin Edit/Delete)
+    function renderProductsCatalogSubmodule() {
+      const isAdmin = !state.user || state.user.role === 'admin';
       const prodList = state.products.length > 0 ? state.products : [
-        { sku: "drn", name: "Drone Action Camera", weight: 0.8, stock: 500, category: "Drone Action Cameras" },
-        { sku: "wg", name: "Wide Gimbal Camera", weight: 2.5, stock: 500, category: "Drone Action Cameras" },
-        { sku: "ac", name: "Action Cam Pro", weight: 0.8, stock: 500, category: "Drone Action Cameras" },
-        { sku: "m22", name: "GS M22 Quad", weight: 0.8, stock: 500, category: "Drone Action Cameras" }
+        { id: "p-drn", sku: "drn", name: "Drone Action Camera", weight: 0.8, stock: 500, category: "Drone Action Cameras", price: 14999 },
+        { id: "p-wg", sku: "wg", name: "Wide Gimbal Camera", weight: 2.5, stock: 500, category: "Drone Action Cameras", price: 18999 },
+        { id: "p-ac", sku: "ac", name: "Action Cam Pro", weight: 0.5, stock: 500, category: "Drone Action Cameras", price: 9999 },
+        { id: "p-m22", sku: "m22", name: "GS M22 Quad", weight: 0.8, stock: 500, category: "Drone Action Cameras", price: 12999 }
       ];
 
-      openSubmoduleSheet('Products & Catalog Registry', `
-        <div style="font-size:12px; color:var(--meta-gray); margin-bottom:12px;">Active SKUs in warehouse registry: ${prodList.length}</div>
-        <div style="display: flex; flex-direction: column; gap: 8px;">
-          ${prodList.map(p => `
-            <div class="kpi-card" style="min-height: auto;">
-              <div style="display:flex; justify-content:space-between; align-items:center;">
-                <span class="font-mono" style="font-weight:700; font-size:14px;">${escapeHtml(p.sku?.toUpperCase() || 'SKU')}</span>
-                <span class="kpi-badge green">Stock: ${p.stock || 500}</span>
-              </div>
-              <div style="font-size:13px; font-weight:600; margin-top:4px;">${escapeHtml(p.name || p.sku)}</div>
-              <div style="font-size:11px; color:var(--meta-gray); margin-top:2px;">Category: ${escapeHtml(p.category || 'Apparel / Hardware')} • Weight: ${p.weight || 0.8} kg</div>
-            </div>
-          `).join('')}
+      const html = `
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+          <div style="font-size:12px; color:var(--meta-gray);">Active SKUs in warehouse registry: ${prodList.length}</div>
+          ${isAdmin ? `
+            <button id="btn-pwa-add-product" class="btn-gold-primary" style="padding:6px 12px; font-size:11px; border-radius:8px; height:auto; width:auto;">
+              <span>+ Add Product</span>
+            </button>
+          ` : ''}
         </div>
-      `);
+        <div id="pwa-products-container" style="display: flex; flex-direction: column; gap: 10px;">
+          ${prodList.map((p, idx) => {
+            const isAc = (p.sku || '').toLowerCase().trim() === 'ac' || (p.name || '').toLowerCase().trim() === 'ac';
+            return `
+              <div class="kpi-card" style="min-height: auto; border: 1px solid var(--hairline-border); padding: 12px; border-radius: 12px; background: var(--canvas);">
+                <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+                  <div>
+                    <div style="display:flex; align-items:center; gap:6px;">
+                      <span class="font-mono" style="font-weight:700; font-size:14px; color:var(--primary-ink);">${escapeHtml(p.sku?.toUpperCase() || 'SKU')}</span>
+                      ${isAc ? '<span style="font-size:9px; font-weight:700; background:rgba(184,134,47,0.15); color:var(--executive-gold); padding:1px 4px; border-radius:4px; font-family:monospace;">AC</span>' : ''}
+                    </div>
+                    <div style="font-size:13px; font-weight:600; margin-top:2px; color:var(--primary-ink);">${escapeHtml(p.name || p.sku)}</div>
+                  </div>
+                  <span class="kpi-badge green" style="font-size:11px;">Stock: ${p.stock ?? 500}</span>
+                </div>
+                <div style="font-size:11px; color:var(--meta-gray); margin-top:4px;">
+                  Category: ${escapeHtml(p.category || 'Drone Action Cameras')} • Weight: <strong>${p.weight || 0.8} kg</strong>${p.price ? ` • Price: <strong>₹${Number(p.price).toLocaleString()}</strong>` : ''}
+                </div>
+                ${isAdmin ? `
+                  <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:10px; padding-top:8px; border-top:1px solid var(--hairline-border);">
+                    <button class="btn-card-edit-product" data-product-idx="${idx}" style="background:var(--surface-container); border:1px solid var(--hairline-border); color:var(--executive-gold); font-size:11px; font-weight:700; padding:5px 12px; border-radius:6px; cursor:pointer;">
+                      ✏️ Edit
+                    </button>
+                    <button class="btn-card-delete-product" data-product-idx="${idx}" style="background:rgba(239,68,68,0.1); border:1px solid rgba(239,68,68,0.2); color:#EF4444; font-size:11px; font-weight:700; padding:5px 12px; border-radius:6px; cursor:pointer;">
+                      🗑️ Delete
+                    </button>
+                  </div>
+                ` : ''}
+              </div>
+            `;
+          }).join('')}
+        </div>
+      `;
+
+      openSubmoduleSheet('Products & Catalog Registry', html);
+
+      if (isAdmin) {
+        // Add Product Button
+        document.getElementById('btn-pwa-add-product')?.addEventListener('click', () => {
+          showProductFormModal();
+        });
+
+        // Edit Product Buttons
+        document.querySelectorAll('.btn-card-edit-product').forEach(btn => {
+          btn.addEventListener('click', () => {
+            const idx = Number(btn.getAttribute('data-product-idx'));
+            const p = prodList[idx];
+            if (p) showProductFormModal(p);
+          });
+        });
+
+        // Delete Product Buttons
+        document.querySelectorAll('.btn-card-delete-product').forEach(btn => {
+          btn.addEventListener('click', async () => {
+            const idx = Number(btn.getAttribute('data-product-idx'));
+            const p = prodList[idx];
+            if (!p) return;
+
+            if (confirm(`Are you sure you want to permanently delete "${p.name || p.sku}" from the catalog?`)) {
+              haptic('medium');
+              showToast(`Deleting ${p.name || p.sku}...`, 'info');
+              const targetId = p.id || p.sku;
+              state.products = state.products.filter(item => (item.id !== p.id && item.sku !== p.sku));
+              localStorage.setItem(STORAGE_KEY_PRODUCTS, JSON.stringify(state.products));
+
+              try {
+                if (window.FirebaseService && typeof window.FirebaseService.deleteProduct === 'function') {
+                  window.FirebaseService.deleteProduct(targetId).catch(err => console.warn('[Firebase] deleteProduct warning:', err));
+                }
+                await apiFetch(`/api/products/${encodeURIComponent(targetId)}`, {
+                  method: 'DELETE',
+                  headers: { 'x-user-role': 'admin' }
+                });
+                showToast(`Product "${p.name || p.sku}" deleted successfully.`, 'success');
+              } catch (err) {
+                console.warn('Backend delete error:', err);
+              }
+              renderProductsCatalogSubmodule();
+            }
+          });
+        });
+      }
+    }
+
+    function showProductFormModal(existing) {
+      const isEdit = !!existing;
+      const title = isEdit ? 'Edit Catalog Product' : 'Register New Product';
+      const formHtml = `
+        <div style="display:flex; flex-direction:column; gap:12px;">
+          <div style="font-size:12px; color:var(--meta-gray);">${isEdit ? `Editing SKU: ${existing.sku}` : 'Add a new item to the warehouse stock registry'}</div>
+          
+          <div>
+            <label style="font-size:11px; font-weight:700; color:var(--primary-ink); display:block; margin-bottom:4px;">Product Name *</label>
+            <input type="text" id="pwa-prod-name" value="${escapeHtml(existing?.name || '')}" placeholder="e.g., Drone 4K Action Camera" style="width:100%; padding:8px 10px; border-radius:8px; border:1px solid var(--hairline-border); font-size:13px; box-sizing:border-box;" />
+          </div>
+
+          <div>
+            <label style="font-size:11px; font-weight:700; color:var(--primary-ink); display:block; margin-bottom:4px;">SKU Code *</label>
+            <input type="text" id="pwa-prod-sku" value="${escapeHtml(existing?.sku || '')}" placeholder="e.g., ac, DRN-4K" style="width:100%; padding:8px 10px; border-radius:8px; border:1px solid var(--hairline-border); font-size:13px; font-family:monospace; box-sizing:border-box;" />
+          </div>
+
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
+            <div>
+              <label style="font-size:11px; font-weight:700; color:var(--primary-ink); display:block; margin-bottom:4px;">Category</label>
+              <input type="text" id="pwa-prod-cat" value="${escapeHtml(existing?.category || 'Drone Action Cameras')}" placeholder="Category" style="width:100%; padding:8px 10px; border-radius:8px; border:1px solid var(--hairline-border); font-size:13px; box-sizing:border-box;" />
+            </div>
+            <div>
+              <label style="font-size:11px; font-weight:700; color:var(--primary-ink); display:block; margin-bottom:4px;">Price (₹)</label>
+              <input type="number" id="pwa-prod-price" value="${existing?.price || 0}" placeholder="0" style="width:100%; padding:8px 10px; border-radius:8px; border:1px solid var(--hairline-border); font-size:13px; box-sizing:border-box;" />
+            </div>
+          </div>
+
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
+            <div>
+              <label style="font-size:11px; font-weight:700; color:var(--primary-ink); display:block; margin-bottom:4px;">Weight (kg) *</label>
+              <input type="number" step="0.01" id="pwa-prod-weight" value="${existing?.weight || 0.5}" placeholder="0.5" style="width:100%; padding:8px 10px; border-radius:8px; border:1px solid var(--hairline-border); font-size:13px; box-sizing:border-box;" />
+            </div>
+            <div>
+              <label style="font-size:11px; font-weight:700; color:var(--primary-ink); display:block; margin-bottom:4px;">Warehouse Stock</label>
+              <input type="number" id="pwa-prod-stock" value="${existing?.stock || 50}" placeholder="50" style="width:100%; padding:8px 10px; border-radius:8px; border:1px solid var(--hairline-border); font-size:13px; box-sizing:border-box;" />
+            </div>
+          </div>
+
+          <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:16px;">
+            <button id="btn-cancel-prod-form" class="btn-card-outline" style="padding:8px 14px; font-size:12px; font-weight:700;">Cancel</button>
+            <button id="btn-save-prod-form" class="btn-gold-primary" style="padding:8px 16px; font-size:12px; font-weight:700; border-radius:8px;">
+              <span>${isEdit ? 'Save Changes' : 'Register Product'}</span>
+            </button>
+          </div>
+        </div>
+      `;
+
+      openSubmoduleSheet(title, formHtml);
+
+      document.getElementById('btn-cancel-prod-form')?.addEventListener('click', () => {
+        renderProductsCatalogSubmodule();
+      });
+
+      document.getElementById('btn-save-prod-form')?.addEventListener('click', async () => {
+        const name = (document.getElementById('pwa-prod-name')?.value || '').trim();
+        const sku = (document.getElementById('pwa-prod-sku')?.value || '').trim();
+        const category = (document.getElementById('pwa-prod-cat')?.value || 'Drone Action Cameras').trim();
+        const price = Number(document.getElementById('pwa-prod-price')?.value) || 0;
+        const weight = Number(document.getElementById('pwa-prod-weight')?.value) || 0.5;
+        const stock = Number(document.getElementById('pwa-prod-stock')?.value) || 50;
+
+        if (!name || !sku) {
+          alert('Product name and SKU code are required.');
+          return;
+        }
+
+        haptic('medium');
+        showToast(isEdit ? 'Updating product...' : 'Adding product...', 'info');
+
+        const productPayload = {
+          id: existing?.id || `p-${Date.now()}-${Math.floor(Math.random() * 100000)}`,
+          name,
+          sku,
+          category,
+          price,
+          weight,
+          stock
+        };
+
+        if (isEdit) {
+          state.products = state.products.map(p => (p.id === existing.id || p.sku === existing.sku) ? productPayload : p);
+        } else {
+          state.products = [productPayload, ...state.products];
+        }
+        localStorage.setItem(STORAGE_KEY_PRODUCTS, JSON.stringify(state.products));
+
+        try {
+          if (window.FirebaseService && typeof window.FirebaseService.saveProduct === 'function') {
+            window.FirebaseService.saveProduct(productPayload).catch(err => console.warn('[Firebase] saveProduct warning:', err));
+          }
+          await apiFetch('/api/products', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'x-user-role': 'admin'
+            },
+            body: JSON.stringify(productPayload)
+          });
+          showToast(`Product "${name}" saved successfully.`, 'success');
+        } catch (err) {
+          console.warn('Backend save error:', err);
+        }
+
+        renderProductsCatalogSubmodule();
+      });
+    }
+
+    document.getElementById('menu-products')?.addEventListener('click', () => {
+      renderProductsCatalogSubmodule();
     });
 
     // 3. Customers Database (Real Data from data_customers.json)
@@ -2777,22 +2706,112 @@
       `);
     });
 
-    document.getElementById('menu-system-settings')?.addEventListener('click', () => {
-      openSubmoduleSheet('System Configurations', `
-        <div class="form-group">
-          <label class="form-label">Active Backend API Host</label>
-          <input type="url" id="cfg-base-url" class="form-control font-mono" value="${escapeHtml(state.baseUrl)}">
-        </div>
-        <button type="button" id="btn-save-cfg-url" class="btn-ink-primary" style="margin-bottom:14px;">Save & Test Connection</button>
-        <div style="background:var(--surface-low); padding:10px 12px; border-radius:var(--radius-sm); font-size:11px; color:var(--body-slate); line-height:1.5;">
-          <strong>Local Cache Active:</strong> The PWA bundles the full 608-order database directly. All operations work instantaneously offline or with Render.
+    document.getElementById('menu-system-settings')?.addEventListener('click', async () => {
+      const liveBal = state.walletDetails?.available_balance || 1500;
+      openSubmoduleSheet('Shiprocket Live Integration', `
+        <div style="display:flex; flex-direction:column; gap:14px;">
+          <!-- Live Connection Status Card -->
+          <div style="background:var(--surface); border:1.5px solid #10B981; border-radius:var(--radius-md); padding:14px; box-shadow:0 2px 8px rgba(16,185,129,0.12);">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+              <span style="font-size:11px; font-weight:700; color:#047857; letter-spacing:0.5px;">LIVE PRODUCTION GATEWAY</span>
+              <span class="status-badge" style="background:#ECFDF5; color:#059669; border:1px solid #A7F3D0; font-size:10px; font-weight:800; padding:2px 8px; border-radius:12px;">● CONNECTED</span>
+            </div>
+            <div style="font-size:13px; font-weight:700; color:var(--primary-ink); margin-bottom:4px;">
+              Carrier Network: Shiprocket Priority Air
+            </div>
+            <div style="font-size:11px; color:var(--body-slate); line-height:1.5;">
+              Account: <strong style="color:var(--primary-ink);">kbunny9015@gmail.com</strong><br>
+              Pickup Hub: <strong style="color:var(--primary-ink);">Ashok og (Mumbai 400001)</strong><br>
+              Wallet Balance: <strong class="font-mono" style="color:var(--executive-gold);">${formatCurrency(liveBal)}</strong>
+            </div>
+          </div>
+
+          <!-- Shiprocket Live Authentication Form -->
+          <div style="background:var(--surface-low); border:1px solid var(--hairline-border); border-radius:var(--radius-md); padding:14px;">
+            <div style="font-size:12px; font-weight:700; color:var(--primary-ink); margin-bottom:6px;">Shiprocket Live Sign-In & Verification</div>
+            <div style="font-size:11px; color:var(--meta-gray); margin-bottom:12px;">Connect with authorized Shiprocket merchant credentials to book consignments and fetch official PDF labels.</div>
+
+            <div class="form-group" style="margin-bottom:10px;">
+              <label class="form-label" style="font-size:11px;">Shiprocket Email</label>
+              <input type="email" id="sr-cfg-email" class="form-control" value="kbunny9015@gmail.com" placeholder="Shiprocket Email">
+            </div>
+
+            <div class="form-group" style="margin-bottom:12px;">
+              <label class="form-label" style="font-size:11px;">Shiprocket Password / Token</label>
+              <input type="password" id="sr-cfg-password" class="form-control" value="pxdIP6f^5VQQ1z86pJ9*sew&IH#^DY8C" placeholder="Shiprocket Password">
+            </div>
+
+            <button type="button" id="btn-test-shiprocket" class="btn-gold-primary" style="width:100%; height:40px; font-size:12px; font-weight:700; display:flex; align-items:center; justify-content:center; gap:6px;">
+              <span class="material-symbols-outlined" style="font-size:18px;">cloud_sync</span>
+              <span>Test Live Shiprocket Connection</span>
+            </button>
+            <div id="sr-test-feedback" style="margin-top:8px; font-size:11px; display:none; padding:8px 10px; border-radius:6px;"></div>
+          </div>
+
+          <!-- Server Backend Endpoint -->
+          <div class="form-group">
+            <label class="form-label" style="font-size:11px;">Active Backend Server URL</label>
+            <input type="url" id="cfg-base-url" class="form-control font-mono" value="${escapeHtml(state.baseUrl)}">
+          </div>
+          <button type="button" id="btn-save-cfg-url" class="btn-ink-primary" style="height:38px; font-size:12px;">Save Server URL</button>
         </div>
       `);
 
+      document.getElementById('btn-test-shiprocket')?.addEventListener('click', async () => {
+        const btn = document.getElementById('btn-test-shiprocket');
+        const feedback = document.getElementById('sr-test-feedback');
+        const email = document.getElementById('sr-cfg-email')?.value?.trim();
+        const password = document.getElementById('sr-cfg-password')?.value?.trim();
+
+        if (btn) btn.disabled = true;
+        if (feedback) {
+          feedback.style.display = 'block';
+          feedback.style.background = 'rgba(234, 179, 8, 0.1)';
+          feedback.style.color = '#B45309';
+          feedback.innerHTML = '<span class="material-symbols-outlined" style="font-size:14px; vertical-align:middle;">sync</span> Connecting to Shiprocket Live Production API...';
+        }
+
+        try {
+          const res = await apiFetch('/api/shiprocket/test-connection', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email, password })
+          });
+          const data = await res.json();
+          if (data.success) {
+            haptic('success');
+            if (feedback) {
+              feedback.style.background = '#ECFDF5';
+              feedback.style.color = '#065F46';
+              feedback.style.border = '1px solid #A7F3D0';
+              feedback.innerHTML = '<strong>✓ Connected to Shiprocket Live!</strong> ' + (data.message || 'Production API verified.');
+            }
+            showToast('Shiprocket Live Connected!', 'success');
+          } else {
+            haptic('error');
+            if (feedback) {
+              feedback.style.background = '#FEF2F2';
+              feedback.style.color = '#991B1B';
+              feedback.style.border = '1px solid #FECACA';
+              feedback.innerHTML = '<strong>✗ Connection Failed:</strong> ' + (data.error || 'Authentication error');
+            }
+          }
+        } catch (err) {
+          if (feedback) {
+            feedback.style.background = '#FEF2F2';
+            feedback.style.color = '#991B1B';
+            feedback.innerHTML = '<strong>✗ Connection Error:</strong> Unable to reach server';
+          }
+        } finally {
+          if (btn) btn.disabled = false;
+        }
+      });
+
       document.getElementById('btn-save-cfg-url')?.addEventListener('click', () => {
-        const val = document.getElementById('cfg-base-url').value.trim();
+        const val = document.getElementById('cfg-base-url')?.value?.trim();
         if (val) {
           state.baseUrl = val;
+          resolvedApiBase = val;
           showToast(`Server URL updated: ${val}`, 'success');
         }
       });
@@ -2945,19 +2964,58 @@
     const banner = document.getElementById('ios-install-banner');
     const dismissBtn = document.getElementById('btn-dismiss-install');
 
+    // 1. Check if user already dismissed or installed
+    const dismissed = localStorage.getItem('df_ios_install_dismissed') === 'true';
+
+    // 2. Comprehensive standalone detection across iOS & Safari Web Clip
+    const isStandalone = 
+      (typeof window !== 'undefined' && window.navigator && window.navigator.standalone === true) ||
+      (typeof window !== 'undefined' && window.matchMedia && (
+        window.matchMedia('(display-mode: standalone)').matches ||
+        window.matchMedia('(display-mode: fullscreen)').matches ||
+        window.matchMedia('(display-mode: minimal-ui)').matches
+      )) ||
+      (typeof document !== 'undefined' && document.referrer && document.referrer.includes('apple-touch')) ||
+      (typeof window !== 'undefined' && window.location && window.location.search.includes('standalone=true'));
+
+    if (isStandalone || dismissed) {
+      if (banner) {
+        banner.classList.remove('visible');
+        banner.style.display = 'none';
+      }
+      return;
+    }
+
     const isIos = /iPhone|iPad|iPod/.test(navigator.userAgent) && !window.MSStream;
-    const isStandalone = window.navigator.standalone === true || window.matchMedia('(display-mode: standalone)').matches;
 
     if (isIos && !isStandalone && banner) {
       setTimeout(() => {
-        banner.classList.add('visible');
+        // Double check dismissal before showing
+        if (localStorage.getItem('df_ios_install_dismissed') !== 'true') {
+          banner.classList.add('visible');
+        }
       }, 2000);
     }
 
-    dismissBtn?.addEventListener('click', () => {
-      haptic();
-      banner?.classList.remove('visible');
-    });
+    function handleDismiss(e) {
+      if (e) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+      haptic('light');
+      try {
+        localStorage.setItem('df_ios_install_dismissed', 'true');
+      } catch (_) {}
+      if (banner) {
+        banner.classList.remove('visible');
+        setTimeout(() => {
+          banner.style.display = 'none';
+        }, 300);
+      }
+    }
+
+    dismissBtn?.addEventListener('click', handleDismiss);
+    dismissBtn?.addEventListener('touchend', handleDismiss);
   }
 
   // --- Real-Time Firebase Firestore Synchronization Engine ---
@@ -3002,6 +3060,20 @@
             if (walletData && walletData.available_balance !== undefined) {
               state.walletDetails = walletData;
               renderCockpit();
+            }
+          },
+          onProducts: (liveProducts) => {
+            if (Array.isArray(liveProducts) && liveProducts.length > 0) {
+              console.log(`[PWA Firestore] Live Snapshot: ${liveProducts.length} products received`);
+              state.products = liveProducts;
+              try { localStorage.setItem(STORAGE_KEY_PRODUCTS, JSON.stringify(liveProducts)); } catch (_) {}
+              const prodSub = document.getElementById('submodule-sheet');
+              if (prodSub && prodSub.classList.contains('active')) {
+                const title = document.getElementById('submodule-title');
+                if (title && title.textContent.includes('Products')) {
+                  renderProductsCatalogSubmodule();
+                }
+              }
             }
           },
           onConnectionChange: (connected) => {

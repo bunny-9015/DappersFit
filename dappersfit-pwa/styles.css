@@ -1348,15 +1348,27 @@ button, a, .clickable, .filter-pill, .menu-item, .order-card {
 }
 
 .install-dismiss {
-  width: 26px;
-  height: 26px;
+  width: 36px;
+  height: 36px;
+  min-width: 36px;
+  min-height: 36px;
   border-radius: 50%;
   border: none;
-  background: rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.2);
   color: #FFFFFF;
   display: flex;
   align-items: center;
   justify-content: center;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  flex-shrink: 0;
+  z-index: 10;
+}
+
+.install-dismiss:active {
+  background: rgba(255, 255, 255, 0.35);
+  transform: scale(0.92);
 }
 
 /* ==========================================================================

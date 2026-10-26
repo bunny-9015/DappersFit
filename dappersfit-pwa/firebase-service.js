@@ -33,6 +33,7 @@ let isConnected = false;
 let ordersUnsubscribe = null;
 let ticketsUnsubscribe = null;
 let walletUnsubscribe = null;
+let productsUnsubscribe = null;
 
 try {
   app = initializeApp(firebaseConfig);
@@ -124,6 +125,27 @@ export const FirebaseService = {
         console.warn('[Firebase] Wallet listener warning:', error);
       });
 
+      // 4. Real-Time Products Catalog Listener (Full sync between iOS PWA & Android app)
+      const prodCol = collection(db, 'products');
+      productsUnsubscribe = onSnapshot(prodCol, (snapshot) => {
+        const products = [];
+        snapshot.forEach(docSnap => {
+          const data = docSnap.data();
+          if (data && (data.id || data.sku || data.name)) {
+            products.push({
+              id: docSnap.id,
+              ...data
+            });
+          }
+        });
+        if (onProducts && products.length > 0) {
+          console.log(`[Firebase] Realtime Snapshot: ${products.length} products received`);
+          onProducts(products);
+        }
+      }, (error) => {
+        console.warn('[Firebase] Products listener warning:', error);
+      });
+
     } catch (err) {
       console.warn('[Firebase] Error setting up realtime listeners:', err);
       if (onConnectionChange) onConnectionChange(false);
@@ -176,6 +198,35 @@ export const FirebaseService = {
       return true;
     } catch (err) {
       console.warn('[Firebase] saveTicket error:', err);
+      return false;
+    }
+  },
+
+  // Save/Create/Update Product directly in Firestore (Full sync with Android app)
+  async saveProduct(product) {
+    if (!db || !product) return false;
+    try {
+      const prodId = String(product.id || product.sku || 'prod-' + Date.now());
+      const cleanData = JSON.parse(JSON.stringify({
+        ...product,
+        id: prodId
+      }));
+      await setDoc(doc(db, 'products', prodId), cleanData, { merge: true });
+      return true;
+    } catch (err) {
+      console.warn('[Firebase] saveProduct error:', err);
+      return false;
+    }
+  },
+
+  // Delete Product directly from Firestore
+  async deleteProduct(productId) {
+    if (!db || !productId) return false;
+    try {
+      await deleteDoc(doc(db, 'products', String(productId)));
+      return true;
+    } catch (err) {
+      console.warn('[Firebase] deleteProduct error:', err);
       return false;
     }
   }

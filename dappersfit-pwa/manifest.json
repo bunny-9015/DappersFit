@@ -2,8 +2,8 @@
   "name": "Dappersfit Logistics — iPhone Operations",
   "short_name": "Dappersfit",
   "description": "Kinetic Luxury Logistics fulfillment cockpit, Shiprocket priority dispatch, ticket intake, catalog and employee wallet.",
-  "start_url": "./index.html",
-  "scope": "./",
+  "start_url": "/",
+  "scope": "/",
   "display": "standalone",
   "display_override": ["standalone", "minimal-ui", "window-controls-overlay"],
   "orientation": "portrait-primary",
@@ -34,19 +34,19 @@
     {
       "name": "Cockpit Dashboard",
       "short_name": "Cockpit",
-      "url": "./index.html#cockpit",
+      "url": "/#cockpit",
       "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }]
     },
     {
       "name": "Orders Management",
       "short_name": "Orders",
-      "url": "./index.html#orders",
+      "url": "/#orders",
       "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }]
     },
     {
       "name": "Replacements",
       "short_name": "Tickets",
-      "url": "./index.html#tickets",
+      "url": "/#tickets",
       "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }]
     }
   ]
