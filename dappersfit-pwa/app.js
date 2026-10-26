@@ -2962,10 +2962,12 @@
   // --- Smart iOS Add-to-Home-Screen Banner ---
   function setupIosInstallBanner() {
     const banner = document.getElementById('ios-install-banner');
+    if (!banner) return;
+
     const dismissBtn = document.getElementById('btn-dismiss-install');
 
     // 1. Check if user already dismissed or installed
-    const dismissed = localStorage.getItem('df_ios_install_dismissed') === 'true';
+    const dismissed = localStorage.getItem('df_ios_install_dismissed') === 'true' || localStorage.getItem('df_app_installed') === 'true';
 
     // 2. Comprehensive standalone detection across iOS & Safari Web Clip
     const isStandalone = 
@@ -2978,24 +2980,27 @@
       (typeof document !== 'undefined' && document.referrer && document.referrer.includes('apple-touch')) ||
       (typeof window !== 'undefined' && window.location && window.location.search.includes('standalone=true'));
 
-    if (isStandalone || dismissed) {
-      if (banner) {
-        banner.classList.remove('visible');
-        banner.style.display = 'none';
-      }
+    // 3. Strict iOS device check (iPhone, iPad, iPod, or iPadOS Safari)
+    const isIos = (/iPhone|iPad|iPod/.test(navigator.userAgent) || 
+      (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)) && 
+      !window.MSStream;
+
+    // If already installed, dismissed, or NOT an iOS device: permanently remove from DOM
+    if (isStandalone || dismissed || !isIos) {
+      banner.classList.remove('visible');
+      banner.style.display = 'none';
+      try { banner.remove(); } catch (_) {}
       return;
     }
 
-    const isIos = /iPhone|iPad|iPod/.test(navigator.userAgent) && !window.MSStream;
-
-    if (isIos && !isStandalone && banner) {
-      setTimeout(() => {
-        // Double check dismissal before showing
-        if (localStorage.getItem('df_ios_install_dismissed') !== 'true') {
-          banner.classList.add('visible');
-        }
-      }, 2000);
-    }
+    // Only show for uninstalled iOS browser after delay
+    setTimeout(() => {
+      const alreadyDismissed = localStorage.getItem('df_ios_install_dismissed') === 'true' || localStorage.getItem('df_app_installed') === 'true';
+      if (!alreadyDismissed && banner && !document.hidden) {
+        banner.style.display = 'flex';
+        requestAnimationFrame(() => banner.classList.add('visible'));
+      }
+    }, 2500);
 
     function handleDismiss(e) {
       if (e) {
@@ -3005,17 +3010,26 @@
       haptic('light');
       try {
         localStorage.setItem('df_ios_install_dismissed', 'true');
+        localStorage.setItem('df_app_installed', 'true');
       } catch (_) {}
-      if (banner) {
-        banner.classList.remove('visible');
-        setTimeout(() => {
-          banner.style.display = 'none';
-        }, 300);
-      }
+      banner.classList.remove('visible');
+      banner.style.display = 'none';
+      try { banner.remove(); } catch (_) {}
     }
 
     dismissBtn?.addEventListener('click', handleDismiss);
     dismissBtn?.addEventListener('touchend', handleDismiss);
+
+    // Listen for PWA installation event
+    window.addEventListener('appinstalled', () => {
+      try {
+        localStorage.setItem('df_ios_install_dismissed', 'true');
+        localStorage.setItem('df_app_installed', 'true');
+      } catch (_) {}
+      banner.classList.remove('visible');
+      banner.style.display = 'none';
+      try { banner.remove(); } catch (_) {}
+    });
   }
 
   // --- Real-Time Firebase Firestore Synchronization Engine ---

@@ -35,7 +35,7 @@
     <div id="toast-container" class="toast-container"></div>
 
     <!-- Smart iOS Add-to-Home-Screen Prompt -->
-    <div id="ios-install-banner" class="ios-install-banner">
+    <div id="ios-install-banner" class="ios-install-banner" style="display: none;" aria-hidden="true">
       <div class="install-icon">
         <span class="material-symbols-outlined" style="color: #FFFFFF;">ios_share</span>
       </div>
@@ -316,18 +316,6 @@
         <!-- Operations & Catalog -->
         <div class="menu-group-label">Operations & Catalog</div>
         <div class="menu-card">
-          <button id="menu-courier-booking" class="menu-item">
-            <div class="menu-item-left">
-              <div class="menu-icon-wrap">
-                <span class="material-symbols-outlined">local_shipping</span>
-              </div>
-              <div>
-                <div class="menu-title">Courier Booking & Dispatch</div>
-                <div class="menu-sub">Manual rate comparison & partner selection</div>
-              </div>
-            </div>
-            <span class="material-symbols-outlined menu-chevron">chevron_right</span>
-          </button>
 
           <button id="menu-products" class="menu-item">
             <div class="menu-item-left">
@@ -685,19 +673,6 @@
       </div>
     </div>
 
-    <!-- SHEET: MANUAL COURIER BOOKING WIZARD -->
-    <div id="sheet-courier-booking" class="modal-sheet">
-      <div class="sheet-handle"></div>
-      <div class="sheet-header">
-        <span class="sheet-title">Courier Booking & Dispatch</span>
-        <button class="sheet-close-btn" data-close-sheet="sheet-courier-booking">
-          <span class="material-symbols-outlined" style="font-size: 18px;">close</span>
-        </button>
-      </div>
-      <div class="sheet-body" id="booking-sheet-content">
-        <!-- Dynamically injected wizard -->
-      </div>
-    </div>
 
     <!-- SHEET: AI WHATSAPP INTAKE -->
     <div id="sheet-ai-intake" class="modal-sheet">
