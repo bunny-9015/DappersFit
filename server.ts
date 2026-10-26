@@ -3957,6 +3957,29 @@ app.get('/api/shiprocket/wallet', async (req, res) => {
 // API Route: Get detailed wallet balance (Available Balance and Hold Amount)
 app.get('/api/shiprocket/wallet/balance-details', async (req, res) => {
   try {
+    if (isLiveConfigured()) {
+      try {
+        const headers = await getShiprocketAuthHeaders();
+        const response = await shiprocket.rawRequest('/account/details/wallet-balance', 'GET', headers);
+        const dataObj = response?.data || response;
+        const rawBal = dataObj?.balance_amount ?? dataObj?.wallet_balance ?? dataObj?.balance;
+        if (rawBal !== undefined && rawBal !== null && !isNaN(parseFloat(rawBal))) {
+          const availableBalance = parseFloat(rawBal);
+          const holdAmount = parseFloat(dataObj.hold_amount ?? dataObj.raw_hold_amount ?? 0);
+          const details = {
+            available_balance: availableBalance,
+            hold_amount: holdAmount,
+            last_sync_time: new Date().toISOString(),
+            is_simulated: false
+          };
+          await saveWalletDetails(details);
+          saveWalletBalance(availableBalance);
+          return res.json(details);
+        }
+      } catch (liveErr: any) {
+        console.warn('[Shiprocket Live Wallet Fetch Warning]:', liveErr?.message || liveErr);
+      }
+    }
     const details = await loadWalletDetails();
     res.json(details);
   } catch (err: any) {
@@ -4208,8 +4231,8 @@ app.post('/api/shiprocket/order/book', async (req, res) => {
     try {
       const headers = await getShiprocketAuthHeaders();
 
-      let targetPickupName = requestedPickupName || orderToBook.pickupLocation;
-      if (!targetPickupName || targetPickupName.toLowerCase().includes('dapper') || targetPickupName.toLowerCase().includes('chennai') || targetPickupName.toLowerCase().includes('simulated')) {
+      let targetPickupName = (requestedPickupName || orderToBook.pickupLocation || '').trim();
+      if (!targetPickupName || targetPickupName.toLowerCase().includes('simulated')) {
         targetPickupName = 'Ashok og ';
       }
 
