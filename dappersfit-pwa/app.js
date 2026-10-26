@@ -2720,7 +2720,7 @@
               Carrier Network: Shiprocket Priority Air
             </div>
             <div style="font-size:11px; color:var(--body-slate); line-height:1.5;">
-              Account: <strong style="color:var(--primary-ink);">kbunny9015@gmail.com</strong><br>
+              Account: <strong style="color:var(--primary-ink);">kamathamlokesh1234@gmail.com</strong><br>
               Pickup Hub: <strong style="color:var(--primary-ink);">Ashok og (Mumbai 400001)</strong><br>
               Wallet Balance: <strong class="font-mono" style="color:var(--executive-gold);">${formatCurrency(liveBal)}</strong>
             </div>
@@ -2733,12 +2733,12 @@
 
             <div class="form-group" style="margin-bottom:10px;">
               <label class="form-label" style="font-size:11px;">Shiprocket Email</label>
-              <input type="email" id="sr-cfg-email" class="form-control" value="kbunny9015@gmail.com" placeholder="Shiprocket Email">
+              <input type="email" id="sr-cfg-email" class="form-control" value="kamathamlokesh1234@gmail.com" placeholder="Shiprocket Email">
             </div>
 
             <div class="form-group" style="margin-bottom:12px;">
               <label class="form-label" style="font-size:11px;">Shiprocket Password / Token</label>
-              <input type="password" id="sr-cfg-password" class="form-control" value="pxdIP6f^5VQQ1z86pJ9*sew&IH#^DY8C" placeholder="Shiprocket Password">
+              <input type="password" id="sr-cfg-password" class="form-control" value="Uk!YZy6KKQ5r4r4bPo$HWuVSB7B#egMA" placeholder="Shiprocket Password">
             </div>
 
             <button type="button" id="btn-test-shiprocket" class="btn-gold-primary" style="width:100%; height:40px; font-size:12px; font-weight:700; display:flex; align-items:center; justify-content:center; gap:6px;">

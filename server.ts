@@ -256,8 +256,8 @@ function cleanPhoneNumber(phone: string): string {
 let cachedToken: string | null = null;
 let tokenExpiry: number | null = null;
 
-const DEFAULT_SHIPROCKET_EMAIL = 'kbunny9015@gmail.com';
-const DEFAULT_SHIPROCKET_PASSWORD = 'pxdIP6f^5VQQ1z86pJ9*sew&IH#^DY8C';
+const DEFAULT_SHIPROCKET_EMAIL = 'kamathamlokesh1234@gmail.com';
+const DEFAULT_SHIPROCKET_PASSWORD = 'Uk!YZy6KKQ5r4r4bPo$HWuVSB7B#egMA';
 
 // Store server-side settings dynamically with verified live Shiprocket credentials
 let serverSettings = {
@@ -1201,10 +1201,12 @@ app.post('/api/auth/login', (req, res) => {
   // 1. Check Administrator credentials (matches configured admin or account owner)
   const isAdminEmail = inputStr === (adminCreds.email || '').toLowerCase() || 
                        inputStr === 'dappersfit@gmail.com' ||
-                       inputStr === 'kbunny9015@gmail.com';
+                       inputStr === 'kbunny9015@gmail.com' ||
+                       inputStr === 'kamathamlokesh1234@gmail.com';
   const isAdminPassword = password === adminCreds.password || 
                           password === 'Jail@1974' || 
-                          password === 'pxdIP6f^5VQQ1z86pJ9*sew&IH#^DY8C';
+                          password === 'pxdIP6f^5VQQ1z86pJ9*sew&IH#^DY8C' ||
+                          password === 'Uk!YZy6KKQ5r4r4bPo$HWuVSB7B#egMA';
 
   if (isAdminEmail && isAdminPassword) {
     return res.json({ 
@@ -1324,9 +1326,11 @@ app.post('/api/settings', (req, res) => {
   if (!serverSettings.shiprocketEmail) serverSettings.shiprocketEmail = DEFAULT_SHIPROCKET_EMAIL;
   if (!serverSettings.shiprocketPassword) serverSettings.shiprocketPassword = DEFAULT_SHIPROCKET_PASSWORD;
   
-  // Reset token cache when credentials are changed
+  // Reset token cache and auth failure cooldown when credentials are changed
   cachedToken = null;
   tokenExpiry = null;
+  lastAuthFailedTime = null;
+  shiprocketCache.clear();
 
   // Persist to .env
   saveToEnv(
