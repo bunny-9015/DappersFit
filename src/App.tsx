@@ -238,16 +238,9 @@ export default function App() {
       return;
     }
 
-    const items = targetOrder.items || [];
-    const isAcProduct = items.some((item: any) => {
-      const sku = (item.sku || '').toLowerCase().trim();
-      const name = (item.name || '').toLowerCase().trim();
-      return sku === 'ac' || name === 'ac' || /\bac\b/i.test(sku) || /\bac\b/i.test(name);
-    });
-
-    // Default pickup location to Ashok og if not specifically set, or if it is "ac" product
-    const effectivePickupLocation = isAcProduct ? 'Ashok og ' : (targetOrder.pickupLocation || targetOrder.pickupAddress?.name || 'Ashok og ');
-    const effectivePickupPincode = isAcProduct ? '400001' : (targetOrder.pickupAddress?.pincode || '400001');
+    // Default pickup location to Ashok og if not specifically set
+    const effectivePickupLocation = targetOrder.pickupLocation || targetOrder.pickupAddress?.name || 'Ashok og ';
+    const effectivePickupPincode = targetOrder.pickupAddress?.pincode || '400001';
 
     // 1. Capture exact previous status/state dynamically
     const previousStatus = targetOrder.status;

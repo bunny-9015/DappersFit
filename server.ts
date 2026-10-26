@@ -1100,10 +1100,9 @@ async function syncFromFirestore() {
       const settingsSnap = await getDoc(doc(firestoreDb, 'system_settings', 'shiprocket'));
       if (settingsSnap.exists()) {
         const d = settingsSnap.data();
-        if (d.shiprocketEmail && typeof d.shiprocketEmail === 'string' && d.shiprocketEmail.trim().length > 0) {
+        if (d.shiprocketEmail && typeof d.shiprocketEmail === 'string' && d.shiprocketEmail.trim().length > 0 &&
+            d.shiprocketPassword && typeof d.shiprocketPassword === 'string' && d.shiprocketPassword.trim().length > 0) {
           serverSettings.shiprocketEmail = d.shiprocketEmail.trim();
-        }
-        if (d.shiprocketPassword && typeof d.shiprocketPassword === 'string' && d.shiprocketPassword.trim().length > 0) {
           serverSettings.shiprocketPassword = d.shiprocketPassword.trim();
         }
         if (d.shiprocketToken && typeof d.shiprocketToken === 'string' && d.shiprocketToken.trim().length > 0) {
@@ -4089,7 +4088,10 @@ app.post('/api/shiprocket/order/book', async (req, res) => {
   clearShiprocketCache();
   const { orderId, courier, assignedEmployeeId, deliveryAddress, pickupLocationName, pickupPostcode, pickupAddress, forceRebook } = req.body;
 
-  const orderToBook = mockOrders.find(o => String(o.id) === String(orderId) || String(o.orderNumber) === String(orderId));
+  let orderToBook = await getOrderFromDb(orderId);
+  if (!orderToBook) {
+    orderToBook = mockOrders.find(o => String(o.id) === String(orderId) || String(o.orderNumber) === String(orderId));
+  }
 
   if (!orderToBook) {
     return res.status(404).json({ success: false, error: 'Order not found.' });
@@ -4113,6 +4115,7 @@ app.post('/api/shiprocket/order/book', async (req, res) => {
   const requestedPickupName = (pickupLocationName || pickupAddress?.name || '').trim();
   const requestedPickupPin = (pickupPostcode || pickupAddress?.pincode || '').trim();
   const existingPickup = (orderToBook.pickupLocation || '').trim();
+  const isChangingPickup = Boolean(requestedPickupName && existingPickup && requestedPickupName.toLowerCase() !== existingPickup.toLowerCase());
   const isSimulatedShipment = String(orderToBook.shipmentId || '').startsWith('sim_') || 
                              String(orderToBook.shiprocketOrderId || '').startsWith('sim_') ||
                              String(orderToBook.awbCode || '').startsWith('AWB');
@@ -4766,7 +4769,11 @@ app.post('/api/orders/:orderId/set-status', async (req, res) => {
 app.post('/api/shiprocket/order/priority-book', async (req, res) => {
   clearShiprocketCache();
   const { orderId, assignedEmployeeId, pickupLocationName, pickupPostcode, pickupAddress, forceRebook } = req.body;
-  const orderToBook = mockOrders.find(o => String(o.id) === String(orderId) || String(o.orderNumber) === String(orderId));
+
+  let orderToBook = await getOrderFromDb(orderId);
+  if (!orderToBook) {
+    orderToBook = mockOrders.find(o => String(o.id) === String(orderId) || String(o.orderNumber) === String(orderId));
+  }
 
   if (!orderToBook) {
     return res.status(404).json({ success: false, error: 'Order not found.' });
@@ -4785,6 +4792,7 @@ app.post('/api/shiprocket/order/priority-book', async (req, res) => {
 
   const requestedLocationName = (pickupLocationName || pickupAddress?.name || '').trim();
   const existingPickup = (orderToBook.pickupLocation || '').trim();
+  const isChangingPickup = Boolean(requestedLocationName && existingPickup && requestedLocationName.toLowerCase() !== existingPickup.toLowerCase());
   const isSimulatedShipment = String(orderToBook.shipmentId || '').startsWith('sim_') || 
                              String(orderToBook.shiprocketOrderId || '').startsWith('sim_') ||
                              String(orderToBook.awbCode || '').startsWith('AWB');
@@ -4835,22 +4843,8 @@ app.post('/api/shiprocket/order/priority-book', async (req, res) => {
 
   try {
     let couriersList = [];
-    // Priority Courier rule: "ac" product pickup address is strictly "Ashok og "
-    const orderItems = orderToBook.items || [];
-    const hasAcProduct = orderItems.some((item: any) => {
-      const sku = (item.sku || '').toLowerCase().trim();
-      const name = (item.name || '').toLowerCase().trim();
-      return sku === 'ac' || name === 'ac' || /\bac\b/i.test(sku) || /\bac\b/i.test(name);
-    });
-
     let targetLocationName = requestedLocationName || orderToBook.pickupLocation;
-    let targetPostcode = pickupPostcode || pickupAddress?.pincode;
-
-    if (hasAcProduct) {
-      targetLocationName = 'Ashok og ';
-      targetPostcode = '400001';
-      console.log(`[Shiprocket Priority Booking] "ac" product detected for order ${orderToBook.orderNumber || orderId}. Pickup location strictly enforced to "Ashok og " (400001).`);
-    } else if (!targetLocationName || 
+    if (!targetLocationName || 
         targetLocationName.toLowerCase().includes('dapper') || 
         targetLocationName.toLowerCase().includes('chennai') || 
         targetLocationName.toLowerCase().includes('simulated')) {
@@ -4866,7 +4860,7 @@ app.post('/api/shiprocket/order/priority-book', async (req, res) => {
       const pickupRes = await validateAndResolvePickupLocation(
         headers,
         targetLocationName,
-        targetPostcode,
+        pickupPostcode || pickupAddress?.pincode,
         pickupAddress,
         allowDefault
       );
@@ -5077,7 +5071,16 @@ app.post('/api/shiprocket/order/priority-book', async (req, res) => {
           }
           
           orderToBook.status = 'failed';
-          orderToBook.errorMessage = `AWB Assignment Failed across all prioritized couriers AND Auto-Assign. Last error: ${lastAwbError}`;
+          const isWalletError = lastAwbError && (
+            lastAwbError.toLowerCase().includes('recharge') ||
+            lastAwbError.toLowerCase().includes('balance') ||
+            lastAwbError.toLowerCase().includes('wallet')
+          );
+          if (isWalletError) {
+            orderToBook.errorMessage = `Shiprocket Wallet Recharge Required: ${lastAwbError}. Please recharge your Shiprocket wallet (minimum ₹100 required) on shiprocket.in.`;
+          } else {
+            orderToBook.errorMessage = `AWB Assignment Failed across all prioritized couriers AND Auto-Assign. Last error: ${lastAwbError}`;
+          }
           orderToBook.shiprocketOrderId = undefined;
           orderToBook.shipmentId = undefined;
           await saveSingleOrderToDb(orderToBook);

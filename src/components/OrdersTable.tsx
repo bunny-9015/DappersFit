@@ -1522,10 +1522,7 @@ export default function OrdersTable({
                                           setPincodeError(val.errors.pincode || null);
                                           return;
                                         }
-                                        const booked = await onPriorityBook(order.id);
-                                        if (booked) {
-                                          setSelectedOrderForLabel(booked as Order);
-                                        }
+                                        await onPriorityBook(order.id);
                                       }}
                                       disabled={isOrderProcessing}
                                       className={`px-3 py-1.5 font-black text-xs uppercase tracking-wider rounded-lg flex items-center gap-1 shadow-sm transition ${

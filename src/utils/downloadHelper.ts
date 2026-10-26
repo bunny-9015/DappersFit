@@ -10,6 +10,8 @@ export async function downloadFileFromUrl(url: string, filename: string): Promis
     if (typeof window !== 'undefined' && !url.startsWith(window.location.origin)) {
       targetUrl = `/api/shiprocket/download-live-pdf?url=${encodeURIComponent(url)}&filename=${encodeURIComponent(filename)}`;
     }
+  } else if (url.startsWith('/') && typeof window !== 'undefined') {
+    targetUrl = `${window.location.origin}${url}`;
   }
 
   try {
@@ -31,8 +33,10 @@ export async function downloadFileFromUrl(url: string, filename: string): Promis
     const blobUrl = URL.createObjectURL(blob);
     
     const a = document.createElement('a');
+    a.style.display = 'none';
     a.href = blobUrl;
     a.download = filename;
+    a.setAttribute('download', filename);
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -52,8 +56,11 @@ export async function downloadFileFromUrl(url: string, filename: string): Promis
     
     // Direct link fallback
     const a = document.createElement('a');
+    a.style.display = 'none';
     a.href = targetUrl;
+    a.target = '_blank';
     a.download = filename;
+    a.setAttribute('download', filename);
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
