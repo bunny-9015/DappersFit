@@ -4054,7 +4054,10 @@ app.get('/api/shiprocket/pickup-addresses', async (req, res) => {
 
 // API Route: Courier serviceability query
 app.post('/api/shiprocket/serviceability', async (req, res) => {
-  const { delivery_postcode, weight, cod, pickup_postcode, pickup_location } = req.body;
+  const delivery_postcode = req.body.delivery_postcode || req.body.deliveryPincode || req.body.deliveryPostcode;
+  const pickup_postcode = req.body.pickup_postcode || req.body.pickupPincode || req.body.pickupPostcode;
+  const pickup_location = req.body.pickup_location || req.body.pickupLocation || req.body.pickupLocationName;
+  const { weight, cod } = req.body;
 
   if (isLiveConfigured()) {
     try {
