@@ -1479,3 +1479,85 @@ button, a, .clickable, .filter-pill, .menu-item, .order-card {
   color: var(--primary-ink);
 }
 
+/* ==========================================================================
+   NEW ORDER MODAL & ATTRIBUTION STYLES (Parity with Desktop React App)
+   ========================================================================== */
+.attributed-creator-card {
+  background: #F0FDF4;
+  border: 1px solid #BBF7D0;
+  border-radius: var(--radius-md);
+  padding: 10px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.creator-badge-auto {
+  background: #DCFCE7;
+  color: #166534;
+  font-size: 10px;
+  font-weight: 800;
+  padding: 3px 8px;
+  border-radius: 6px;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  flex-shrink: 0;
+}
+
+.product-advance-card {
+  background: rgba(239, 233, 222, 0.45);
+  border: 1px solid rgba(214, 203, 185, 0.9);
+  border-radius: var(--radius-md);
+  padding: 12px;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.incentive-pill {
+  font-family: monospace;
+  font-size: 10px;
+  font-weight: 800;
+  background: #EFE9DE;
+  color: #A67527;
+  padding: 2px 8px;
+  border-radius: 6px;
+}
+
+.btn-ai-parse-pill {
+  background: #0F172A;
+  color: #FFFFFF;
+  border: none;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  padding: 6px 12px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+  transition: background 0.2s ease, transform 0.1s ease;
+}
+
+.btn-ai-parse-pill:active {
+  background: #1E293B;
+  transform: scale(0.96);
+}
+
+.duplicate-alert-banner {
+  background: #FEF2F2;
+  border: 1.5px solid #FCA5A5;
+  border-radius: var(--radius-md);
+  padding: 12px 14px;
+  margin-bottom: 14px;
+  color: #991B1B;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  box-shadow: 0 2px 8px rgba(239, 68, 68, 0.1);
+}
+

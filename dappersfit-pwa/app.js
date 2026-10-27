@@ -1709,7 +1709,7 @@
     showToast(`Order ${order.orderNumber} deleted`, 'info');
   }
 
-  // --- Register New Order Modal & AI Smart Parser (Matches Android App) ---
+  // --- Register New Order Modal & AI Smart Parser (Matches Desktop & Android App) ---
   function openAddOrderSheet() {
     haptic('light');
     const form = document.getElementById('form-add-order');
@@ -1717,12 +1717,78 @@
     const parseBtn = document.getElementById('btn-parse-ai-order');
     const statusMsg = document.getElementById('ai-order-status');
     const parsedChip = document.getElementById('ai-parsed-chip');
+    const duplicateAlert = document.getElementById('new-order-duplicate-alert');
 
     if (promptInput) promptInput.value = '';
     if (statusMsg) { statusMsg.style.display = 'none'; statusMsg.textContent = ''; }
     if (parsedChip) parsedChip.style.display = 'none';
+    if (duplicateAlert) { duplicateAlert.style.display = 'none'; duplicateAlert.innerHTML = ''; }
 
-    // Parse button handler
+    // 1. Populate Employee Assignment Dropdown
+    const empSelect = document.getElementById('new-order-assigned-employee');
+    if (empSelect) {
+      empSelect.innerHTML = '<option value="">Unassigned</option>';
+      const emps = Array.isArray(state.employees) && state.employees.length > 0 ? state.employees : [
+        { id: "emp-1784187312734-878141", name: "Lokesh Kamatham", role: "Operations Manager" },
+        { id: "emp-1784188185987-272514", name: "nani", role: "Staff" },
+        { id: "emp-1784188230489-614248", name: "chaithra", role: "Fulfillment Executive" },
+        { id: "emp-1786373819809-790635", name: "Devi", role: "Inventory Lead" }
+      ];
+      emps.forEach(e => {
+        const opt = document.createElement('option');
+        opt.value = e.id || e.name;
+        opt.textContent = `${e.name} (${e.role || 'Staff'})`;
+        empSelect.appendChild(opt);
+      });
+    }
+
+    // 2. Populate Pick from Catalog Dropdown
+    const catalogSelect = document.getElementById('new-order-catalog-picker');
+    if (catalogSelect) {
+      catalogSelect.innerHTML = '<option value="">Choose item...</option>';
+      const prods = Array.isArray(state.products) && state.products.length > 0 ? state.products : [];
+      prods.forEach(p => {
+        const opt = document.createElement('option');
+        opt.value = p.name || p.sku;
+        opt.textContent = `${p.name || p.sku} - ₹${p.price || 1499}`;
+        opt.setAttribute('data-price', p.price || 1499);
+        opt.setAttribute('data-weight', p.weight || 0.5);
+        catalogSelect.appendChild(opt);
+      });
+
+      catalogSelect.onchange = () => {
+        const selectedOpt = catalogSelect.options[catalogSelect.selectedIndex];
+        if (selectedOpt && selectedOpt.value) {
+          const itemInput = document.getElementById('new-order-item-name');
+          const amountInput = document.getElementById('new-order-amount');
+          const weightInput = document.getElementById('new-order-weight');
+          if (itemInput) itemInput.value = selectedOpt.value;
+          if (amountInput) amountInput.value = selectedOpt.getAttribute('data-price') || '1499';
+          if (weightInput) weightInput.value = selectedOpt.getAttribute('data-weight') || '0.5';
+          haptic('light');
+        }
+      };
+    }
+
+    // 3. Update Attributed Creator Info
+    const creatorNameEl = document.getElementById('new-order-creator-name');
+    const creatorEmailEl = document.getElementById('new-order-creator-email');
+    const currentName = state.user?.name || 'Dappersfit Admin';
+    const currentEmail = state.user?.email || 'dappersfit@gmail.com';
+    if (creatorNameEl) creatorNameEl.textContent = currentName;
+    if (creatorEmailEl) creatorEmailEl.textContent = currentEmail;
+
+    // 4. Product Advance Checkbox Incentive Toggle
+    const advCheckbox = document.getElementById('new-order-advance');
+    const advPill = document.getElementById('advance-incentive-pill');
+    if (advCheckbox && advPill) {
+      advCheckbox.onchange = () => {
+        advPill.textContent = advCheckbox.checked ? 'INCENTIVE: ₹50' : 'INCENTIVE: ₹30';
+        haptic('light');
+      };
+    }
+
+    // Parse button handler (AI Quick Assist)
     if (parseBtn) {
       parseBtn.onclick = () => {
         const text = promptInput?.value?.trim();
@@ -1781,18 +1847,22 @@
     nameInput?.addEventListener('input', () => {
       nameInput.style.border = '1px solid var(--hairline-border)';
       if (errName) errName.style.display = 'none';
+      if (duplicateAlert) duplicateAlert.style.display = 'none';
     });
     phoneInput?.addEventListener('input', () => {
       phoneInput.style.border = '1px solid var(--hairline-border)';
       if (errPhone) errPhone.style.display = 'none';
+      if (duplicateAlert) duplicateAlert.style.display = 'none';
     });
     addrInput?.addEventListener('input', () => {
       addrInput.style.border = '1px solid var(--hairline-border)';
       if (errAddr) errAddr.style.display = 'none';
+      if (duplicateAlert) duplicateAlert.style.display = 'none';
     });
     pinInput?.addEventListener('input', () => {
       pinInput.style.border = '1px solid var(--hairline-border)';
       if (errPin) errPin.style.display = 'none';
+      if (duplicateAlert) duplicateAlert.style.display = 'none';
     });
 
     // Form submission handler
@@ -1806,9 +1876,16 @@
         const stateName = (document.getElementById('new-order-state')?.value || '').trim() || 'India';
         const pincode = (pinInput?.value || '').trim();
         const itemName = (document.getElementById('new-order-item-name')?.value || '').trim();
+        const quantity = parseInt(document.getElementById('new-order-quantity')?.value, 10) || 1;
         const amount = parseFloat(document.getElementById('new-order-amount')?.value) || 1499;
-        const paymentMethod = document.getElementById('new-order-payment')?.value;
-        const isAdvance = document.getElementById('new-order-advance')?.checked;
+        const weight = parseFloat(document.getElementById('new-order-weight')?.value) || 0.5;
+        const paymentMethod = document.getElementById('new-order-payment')?.value || 'Cash On Delivery (COD)';
+        const isAdvance = document.getElementById('new-order-advance')?.checked || false;
+        const assignedEmpId = document.getElementById('new-order-assigned-employee')?.value || '';
+
+        const boxLength = parseFloat(document.getElementById('new-order-length')?.value) || 22;
+        const boxWidth = parseFloat(document.getElementById('new-order-width')?.value) || 15;
+        const boxHeight = parseFloat(document.getElementById('new-order-height')?.value) || 6;
 
         // Mandatory Field Validation
         let hasError = false;
@@ -1857,12 +1934,89 @@
           return;
         }
 
-        // Duplicate check (Matches Android App)
-        const existing = state.orders.find(o => (o.customerName || '').toLowerCase() === customerName.toLowerCase());
-        if (existing) {
-          if (!confirm(`An order for "${customerName}" already exists (${existing.orderNumber}). Do you still want to create a new one?`)) {
+        // =====================================================================
+        // DUPLICATE ORDER DETECTION (Compare Complete Relevant Raw Order Data)
+        // Show warning ONLY when ALL relevant raw data matches an existing order!
+        // =====================================================================
+        const normStr = (s) => (s || '').toString().toLowerCase().trim().replace(/[^a-z0-9]/g, '');
+        const normDigits = (p) => (p || '').toString().replace(/\D/g, '');
+        const last10 = (p) => {
+          const d = normDigits(p);
+          return d.length >= 10 ? d.slice(-10) : d;
+        };
+
+        const newCust = normStr(customerName);
+        const newPh = last10(phone);
+        const newAddr = normStr(address);
+        const newPin = normDigits(pincode);
+        const newProd = normStr(itemName);
+        const newQty = quantity;
+
+        const hasAllRequiredFields = newCust && newPh.length >= 10 && newAddr.length >= 5 && newPin.length === 6 && newProd;
+
+        if (hasAllRequiredFields) {
+          const matchedDuplicate = state.orders.find(o => {
+            if (!o || o.status === 'cancelled') return false;
+            const oCust = normStr(o.customerName || o.address?.name);
+            const oPh = last10(o.address?.phone || o.phone);
+            const oAddr = normStr(o.address?.address);
+            const oPin = normDigits(o.address?.pincode);
+            const oFirstItem = Array.isArray(o.items) && o.items.length > 0 ? o.items[0] : null;
+            const oProd = normStr(oFirstItem?.name || oFirstItem?.sku || o.productName || o.item);
+            const oQty = Number(oFirstItem?.quantity || o.quantity || 1);
+
+            return oCust === newCust &&
+                   oPh === newPh &&
+                   oAddr === newAddr &&
+                   oPin === newPin &&
+                   oProd === newProd &&
+                   oQty === newQty;
+          });
+
+          if (matchedDuplicate) {
+            haptic('error');
+            if (duplicateAlert) {
+              duplicateAlert.style.display = 'flex';
+              duplicateAlert.innerHTML = `
+                <div style="display:flex; align-items:center; gap:6px; font-weight:800; font-size:12px;">
+                  <span class="material-symbols-outlined" style="font-size:18px;">warning</span>
+                  <span>Duplicate Order Detected</span>
+                </div>
+                <div style="font-size:11px; line-height:1.4;">
+                  An identical order matching all raw data already exists with ID <strong>${escapeHtml(matchedDuplicate.orderNumber || matchedDuplicate.id)}</strong>.<br>
+                  <strong>Customer:</strong> ${escapeHtml(matchedDuplicate.customerName)} • <strong>Phone:</strong> ${escapeHtml(matchedDuplicate.address?.phone || '--')}<br>
+                  <strong>Product:</strong> ${escapeHtml(matchedDuplicate.items?.[0]?.name || itemName)} (Qty: ${newQty}) • <strong>Status:</strong> ${escapeHtml(matchedDuplicate.status)}
+                </div>
+                <div style="font-size:10px; color:#B91C1C; margin-top:2px;">
+                  To prevent duplicate bookings, please verify before submitting.
+                </div>
+              `;
+              duplicateAlert.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }
+            showToast(`Duplicate Order Detected! Matches ${matchedDuplicate.orderNumber}`, 'error');
             return;
           }
+        }
+
+        // Retrieve authentic employee details & registered phone number
+        let creatorPhone = state.user?.phone || '';
+        let creatorName = state.user?.name || (state.user?.role === 'admin' ? 'Admin Operations' : 'Employee');
+        let creatorId = state.user?.id || (state.user?.role === 'admin' ? 'admin' : 'emp-staff');
+
+        if (!creatorPhone && state.employees && state.employees.length > 0) {
+          const match = state.employees.find(e => 
+            e.id === state.user?.id || 
+            e.email === state.user?.email || 
+            e.username === state.user?.username ||
+            (e.name && e.name.toLowerCase() === (state.user?.name || '').toLowerCase())
+          );
+          if (match && match.phone) {
+            creatorPhone = match.phone;
+          }
+        }
+
+        if (!creatorPhone && state.user?.role === 'admin') {
+          creatorPhone = '7702049015'; // Registered primary operator phone
         }
 
         haptic('heavy');
@@ -1889,27 +2043,39 @@
               id: 'itm-' + Date.now(),
               name: itemName,
               sku: itemName.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
-              quantity: 1,
+              quantity: quantity,
               price: amount
             }
           ],
-          weight: 0.5,
+          weight: weight,
+          dimensions: {
+            length: boxLength,
+            width: boxWidth,
+            height: boxHeight
+          },
           paymentMethod: paymentMethod === 'Prepaid' ? 'PREPAID' : 'COD',
           productAdvance: isAdvance,
           productAdvanceIncentive: (paymentMethod === 'Prepaid' || isAdvance) ? 50.0 : 30.0,
           status: 'pending',
-          createdByEmployeeId: state.user?.id || 'admin',
-          createdByEmployeeName: state.user?.name || 'Admin Operations'
+          assignedEmployeeId: assignedEmpId || creatorId,
+          createdByEmployeeId: creatorId,
+          createdByEmployeeName: creatorName,
+          createdByEmployeePhone: creatorPhone || 'Employee information unavailable'
         };
 
         // 1. Try sending to backend API POST /api/orders
         try {
-          await fetch('/api/orders', {
+          await apiFetch('/api/orders', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(newOrder)
           });
         } catch (_) {}
+
+        // 2-Way Real-time Firebase Firestore Sync
+        if (window.FirebaseService && typeof window.FirebaseService.saveOrder === 'function') {
+          window.FirebaseService.saveOrder(newOrder).catch(err => console.warn('[Firebase] saveOrder warning:', err));
+        }
 
         // 2. Prepend to state & storage
         state.orders.unshift(newOrder);
@@ -1918,7 +2084,7 @@
         // 3. Update Activity Feed
         state.feed.unshift({
           id: 'f-add-' + Date.now(),
-          employee: state.user?.name || 'Operator',
+          employee: creatorName,
           action: 'New Order Registered',
           target: `${newOrder.orderNumber} • ${newOrder.customerName}`,
           amount: formatCurrency(newOrder.totalAmount),
@@ -1952,6 +2118,25 @@
     if (numEl) numEl.textContent = order.orderNumber;
     if (dateEl) dateEl.textContent = order.date || 'Recent';
 
+    // Resolve employee attribution details
+    let createdByName = order.createdByEmployeeName || order.employeeName || (order.employee && order.employee !== '—' ? order.employee : '');
+    let createdByPhone = order.createdByEmployeePhone || order.employeePhone || '';
+
+    // If phone is missing but we have employee info, look up in employees registry
+    if (!createdByPhone && createdByName && Array.isArray(state.employees) && state.employees.length > 0) {
+      const match = state.employees.find(e => 
+        (e.name && e.name.toLowerCase() === createdByName.toLowerCase()) ||
+        (e.id && e.id === order.createdByEmployeeId) ||
+        (e.email && e.email.toLowerCase() === (order.createdByEmployeeEmail || '').toLowerCase())
+      );
+      if (match && match.phone) {
+        createdByPhone = match.phone;
+      }
+    }
+
+    if (!createdByName) createdByName = 'Employee information unavailable';
+    if (!createdByPhone) createdByPhone = 'Employee information unavailable';
+
     const itemsHtml = order.items && order.items.length > 0 ? order.items.map(i => `
       <div style="display:flex; justify-content:space-between; align-items:center; padding: 8px 0; border-bottom: 1px solid var(--hairline-border);">
         <div>
@@ -1963,6 +2148,35 @@
     `).join('') : '<div style="font-size:12px; color:var(--meta-gray); padding:8px 0;">Standard Package SKU Item (Qty: 1)</div>';
 
     contentEl.innerHTML = `
+      <!-- Prominent Employee Attribution Header (Top of Order Details) -->
+      <div style="background: linear-gradient(135deg, #FAF8F5 0%, #F5F1E9 100%); border: 1.5px solid var(--executive-gold); border-radius: var(--radius-md); padding: 14px; margin-bottom: 14px; box-shadow: 0 2px 8px rgba(184, 134, 47, 0.1);">
+        <div style="display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid rgba(184, 134, 47, 0.25); padding-bottom: 8px; margin-bottom: 10px;">
+          <div style="display: flex; align-items: center; gap: 6px;">
+            <span style="width: 8px; height: 8px; border-radius: 50%; background: var(--executive-gold); display: inline-block;"></span>
+            <span style="font-size: 11px; font-weight: 700; color: var(--primary-ink); text-transform: uppercase; letter-spacing: 0.5px;">Order Attribution & Details</span>
+          </div>
+          <span style="font-size: 10px; font-weight: 700; color: #854D0E; background: rgba(234, 179, 8, 0.15); padding: 2px 8px; border-radius: 10px;">Dappersfit System</span>
+        </div>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; font-size: 12px;">
+          <div>
+            <span style="font-size: 10px; font-weight: 700; color: var(--meta-gray); text-transform: uppercase; display: block;">Order ID</span>
+            <span class="font-mono" style="font-size: 13px; font-weight: 800; color: var(--primary-ink);">${escapeHtml(order.orderNumber || order.id)}</span>
+          </div>
+          <div>
+            <span style="font-size: 10px; font-weight: 700; color: var(--meta-gray); text-transform: uppercase; display: block;">Order Status</span>
+            <span class="status-badge ${escapeHtml(order.status)}" style="font-size: 11px; padding: 2px 8px; display: inline-block; margin-top: 2px;">${escapeHtml(order.status)}</span>
+          </div>
+          <div>
+            <span style="font-size: 10px; font-weight: 700; color: var(--meta-gray); text-transform: uppercase; display: block;">Created By</span>
+            <span style="font-size: 13px; font-weight: 700; color: var(--primary-ink);">${escapeHtml(createdByName)}</span>
+          </div>
+          <div>
+            <span style="font-size: 10px; font-weight: 700; color: var(--meta-gray); text-transform: uppercase; display: block;">Employee Phone Number</span>
+            <span class="font-mono" style="font-size: 13px; font-weight: 800; color: var(--executive-gold);">${createdByPhone !== 'Employee information unavailable' ? `📞 ${escapeHtml(createdByPhone)}` : escapeHtml(createdByPhone)}</span>
+          </div>
+        </div>
+      </div>
+
       <!-- Status & Financial Summary -->
       <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; background: var(--surface); border: 1px solid var(--hairline-border); border-radius: var(--radius-md); padding: 12px 14px;">
         <div>

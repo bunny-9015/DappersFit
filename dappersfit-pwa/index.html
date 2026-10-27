@@ -563,94 +563,176 @@
     <!-- MODAL OVERLAY (Used by all slide-up sheets) -->
     <div id="modal-overlay" class="modal-overlay"></div>
 
-    <!-- SHEET: REGISTER NEW ORDER WITH AI PARSER (Matches Android App) -->
+    <!-- SHEET: REGISTER NEW ORDER (Matches Desktop New Order — Submit for Approval) -->
     <div id="sheet-add-order" class="modal-sheet">
       <div class="sheet-handle"></div>
       <div class="sheet-header">
-        <span class="sheet-title">Register New Order</span>
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <span class="material-symbols-outlined" style="color: #B8862F; font-size: 22px;">auto_awesome</span>
+          <span class="sheet-title" style="font-family: Georgia, serif; font-size: 17px; font-weight: 800; color: var(--primary-ink);">New Order — Submit for Approval</span>
+        </div>
         <button class="sheet-close-btn" data-close-sheet="sheet-add-order">
           <span class="material-symbols-outlined" style="font-size: 18px;">close</span>
         </button>
       </div>
-      <div class="sheet-body">
-        <!-- AI Smart Parser Card -->
-        <div style="padding: 12px; background: var(--surface-low); border: 1px solid rgba(184, 134, 47, 0.35); border-radius: var(--radius-md); margin-bottom: 14px;">
-          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
-            <div style="display: flex; align-items: center; gap: 6px; color: var(--executive-gold); font-weight: 700; font-size: 11px; letter-spacing: 0.5px;">
-              <span class="material-symbols-outlined" style="font-size: 17px;">psychology</span>
-              <span>AI PRODUCT &amp; ADDRESS PARSER</span>
-            </div>
-            <span id="ai-parsed-chip" style="display: none; padding: 2px 6px; border-radius: 4px; background: var(--status-delivered-bg); color: var(--status-delivered-text); font-size: 9px; font-weight: 700;">PARSED ✓</span>
+      <div class="sheet-body" style="padding-bottom: 30px;">
+        
+        <!-- AI Quick Assist: Raw text parser -->
+        <div style="margin-bottom: 14px;">
+          <label style="font-size: 11px; font-weight: 700; color: var(--primary-ink); display: block; margin-bottom: 6px;">AI Quick Assist: Paste raw text to pre-fill address fields</label>
+          <div style="position: relative;">
+            <textarea id="ai-order-prompt" class="form-control" style="height: 76px; font-size: 12px; font-family: monospace; padding-right: 110px; resize: none; background: #FAF9F6;" placeholder="E.g. Flat 402 Sunshine MG Road Pune 411001..."></textarea>
+            <button type="button" id="btn-parse-ai-order" class="btn-ai-parse-pill" style="position: absolute; right: 8px; bottom: 8px;">
+              <span class="material-symbols-outlined" style="font-size: 13px; color: #FBBF24;">auto_awesome</span>
+              <span>AI PARSE</span>
+            </button>
           </div>
-          <p style="font-size: 11px; color: var(--meta-gray); margin-bottom: 8px;">Paste customer WhatsApp/chat message. AI extracts name, phone, address, and amount automatically.</p>
-          <textarea id="ai-order-prompt" class="form-control" style="height: 68px; font-size: 12px;" placeholder="e.g., ADARI RAMACHANDRA NAIDU, Kandhepalli Village, Chodavaram 531036, Phone: 7075091008, 1 wg for Rs 1699 COD"></textarea>
-          <button type="button" id="btn-parse-ai-order" class="btn-card-secondary" style="width: 100%; margin-top: 8px; height: 36px; border-color: var(--executive-gold); color: var(--executive-gold);">
-            <span class="material-symbols-outlined" style="font-size: 16px;">auto_awesome</span>
-            <span>Parse Address &amp; Product via AI</span>
-          </button>
           <div id="ai-order-status" style="font-size: 11px; margin-top: 6px; display: none;"></div>
+          <span id="ai-parsed-chip" style="display: none;"></span>
         </div>
 
-        <!-- Manual Review & Edit Fields -->
+        <!-- Form fields matching screenshot -->
         <form id="form-add-order" novalidate>
-          <div class="form-group">
-            <label class="form-label" for="new-order-customer-name">Customer Full Name *</label>
-            <input type="text" id="new-order-customer-name" class="form-control" placeholder="e.g. Adari Ramachandra Naidu">
-            <div id="error-customer-name" class="field-error-msg" style="display: none; color: #ef4444; font-size: 11px; margin-top: 4px; font-weight: 600;"></div>
-          </div>
-          <div class="form-group">
-            <label class="form-label" for="new-order-phone">Phone Number (+91) *</label>
-            <input type="tel" id="new-order-phone" class="form-control font-mono" placeholder="10-digit mobile number">
-            <div id="error-phone" class="field-error-msg" style="display: none; color: #ef4444; font-size: 11px; margin-top: 4px; font-weight: 600;"></div>
-          </div>
-          <div class="form-group">
-            <label class="form-label" for="new-order-address">Street Address *</label>
-            <input type="text" id="new-order-address" class="form-control" placeholder="House / Flat / Street / Landmark">
-            <div id="error-address" class="field-error-msg" style="display: none; color: #ef4444; font-size: 11px; margin-top: 4px; font-weight: 600;"></div>
-          </div>
-          <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px;">
-            <div class="form-group">
-              <label class="form-label" for="new-order-city">City</label>
-              <input type="text" id="new-order-city" class="form-control" placeholder="City">
+          
+          <!-- Duplicate Order Detection Alert Container -->
+          <div id="new-order-duplicate-alert" style="display: none;" class="duplicate-alert-banner"></div>
+
+          <!-- Customer Contact Info (Direct Inputs) -->
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px;">
+            <div class="form-group" style="margin-bottom: 0;">
+              <label class="form-label" for="new-order-customer-name" style="font-size: 11px; font-weight: 700;">Customer Name *</label>
+              <input type="text" id="new-order-customer-name" class="form-control" placeholder="Customer Name">
+              <div id="error-customer-name" class="field-error-msg" style="display: none; color: #ef4444; font-size: 10px; margin-top: 3px; font-weight: 600;"></div>
             </div>
-            <div class="form-group">
-              <label class="form-label" for="new-order-state">State</label>
-              <input type="text" id="new-order-state" class="form-control" placeholder="State" value="India">
-            </div>
-            <div class="form-group">
-              <label class="form-label" for="new-order-pincode">Pincode *</label>
-              <input type="text" id="new-order-pincode" class="form-control font-mono" placeholder="6 digits">
-              <div id="error-pincode" class="field-error-msg" style="display: none; color: #ef4444; font-size: 11px; margin-top: 4px; font-weight: 600;"></div>
+            <div class="form-group" style="margin-bottom: 0;">
+              <label class="form-label" for="new-order-phone" style="font-size: 11px; font-weight: 700;">Phone Number *</label>
+              <input type="tel" id="new-order-phone" class="form-control font-mono" placeholder="Phone number">
+              <div id="error-phone" class="field-error-msg" style="display: none; color: #ef4444; font-size: 10px; margin-top: 3px; font-weight: 600;"></div>
             </div>
           </div>
 
-          <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 8px;">
-            <div class="form-group">
-              <label class="form-label" for="new-order-item-name">Item Name *</label>
-              <input type="text" id="new-order-item-name" class="form-control" value="Drone 4K Camera Ultra HD" required>
+          <!-- Catalog & Employee Assignment -->
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px;">
+            <div class="form-group" style="margin-bottom: 0;">
+              <label class="form-label" for="new-order-assigned-employee" style="font-size: 11px; font-weight: 700;">Assign Employee (optional)</label>
+              <select id="new-order-assigned-employee" class="form-control" style="font-size: 12px;">
+                <option value="">Unassigned</option>
+              </select>
             </div>
-            <div class="form-group">
-              <label class="form-label" for="new-order-amount">Amount (₹) *</label>
-              <input type="number" id="new-order-amount" class="form-control font-mono" value="1499" required>
+            <div class="form-group" style="margin-bottom: 0;">
+              <label class="form-label" for="new-order-catalog-picker" style="font-size: 11px; font-weight: 700;">Pick from Catalog (optional)</label>
+              <select id="new-order-catalog-picker" class="form-control" style="font-size: 12px;">
+                <option value="">Choose item...</option>
+              </select>
             </div>
           </div>
 
-          <div class="form-group">
-            <label class="form-label" for="new-order-payment">Payment Method *</label>
-            <select id="new-order-payment" class="form-control">
-              <option value="Cash On Delivery (COD)">Cash On Delivery (COD)</option>
-              <option value="Prepaid">Prepaid</option>
-            </select>
+          <!-- Attributed Creator Card (Exactly matching screenshot) -->
+          <div class="attributed-creator-card" id="new-order-creator-box">
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <span class="material-symbols-outlined" style="color: #16A34A; font-size: 18px;">group</span>
+              <span style="font-size: 12px; color: #166534; font-weight: 500;">
+                Attributed Creator: <strong id="new-order-creator-name" style="font-weight: 700; color: #14532D;">Dappersfit Admin</strong> (<span id="new-order-creator-email">dappersfit@gmail.com</span>)
+              </span>
+            </div>
+            <span class="creator-badge-auto">AUTO ATTRIBUTED</span>
           </div>
 
-          <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 14px; padding: 10px; background: var(--surface-low); border: 1px solid var(--hairline-border); border-radius: var(--radius-sm);">
-            <input type="checkbox" id="new-order-advance" style="width: 18px; height: 18px; accent-color: var(--executive-gold);">
-            <label for="new-order-advance" style="font-size: 12px; color: var(--primary-ink); font-weight: 500;">Product Advance Paid (Extra Commission Eligible)</label>
+          <!-- Product Name & Quantity -->
+          <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 10px; margin-bottom: 12px;">
+            <div class="form-group" style="margin-bottom: 0;">
+              <label class="form-label" for="new-order-item-name" style="font-size: 11px; font-weight: 700;">Product Name *</label>
+              <input type="text" id="new-order-item-name" class="form-control" placeholder="Enter item name" value="Drone 4K Camera Ultra HD" required>
+            </div>
+            <div class="form-group" style="margin-bottom: 0;">
+              <label class="form-label" for="new-order-quantity" style="font-size: 11px; font-weight: 700;">Quantity *</label>
+              <input type="number" id="new-order-quantity" class="form-control font-mono" min="1" value="1" placeholder="1" required>
+            </div>
           </div>
 
-          <button type="submit" id="btn-submit-new-order" class="btn-gold-primary" style="width: 100%; height: 46px; font-size: 14px;">
-            <span class="material-symbols-outlined">add_task</span>
-            <span>Register Order</span>
+          <!-- Product Advance Checkbox Card (Exactly matching screenshot) -->
+          <div class="product-advance-card">
+            <input type="checkbox" id="new-order-advance" style="width: 18px; height: 18px; margin-top: 2px; accent-color: #B8862F; cursor: pointer;">
+            <div style="flex: 1;">
+              <div style="display: flex; align-items: center; justify-content: space-between;">
+                <label for="new-order-advance" style="font-size: 12px; font-weight: 700; color: #1E293B; cursor: pointer;">Product Advance</label>
+                <span class="incentive-pill" id="advance-incentive-pill">INCENTIVE: ₹30</span>
+              </div>
+              <div style="font-size: 11px; color: #64748B; margin-top: 3px; line-height: 1.4;">
+                Check if this is a product advance order. Confirmed orders earn ₹50 incentive instead of standard ₹30.
+              </div>
+            </div>
+          </div>
+
+          <!-- Unit Amount, Weight, Payment Method -->
+          <div style="display: grid; grid-template-columns: 1fr 1fr 1.2fr; gap: 8px; margin-bottom: 12px;">
+            <div class="form-group" style="margin-bottom: 0;">
+              <label class="form-label" for="new-order-amount" style="font-size: 11px; font-weight: 700;">Unit Amount (₹) *</label>
+              <input type="number" id="new-order-amount" class="form-control font-mono" placeholder="E.g. 1499" value="1499" required>
+            </div>
+            <div class="form-group" style="margin-bottom: 0;">
+              <label class="form-label" for="new-order-weight" style="font-size: 11px; font-weight: 700;">Weight (kg) *</label>
+              <input type="text" id="new-order-weight" class="form-control font-mono" placeholder="0.5" value="0.5" required>
+            </div>
+            <div class="form-group" style="margin-bottom: 0;">
+              <label class="form-label" for="new-order-payment" style="font-size: 11px; font-weight: 700;">Payment Method *</label>
+              <select id="new-order-payment" class="form-control" style="font-size: 11px;">
+                <option value="Cash On Delivery (COD)">Cash On Delivery (COD)</option>
+                <option value="Prepaid">Prepaid</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Dimensions (cm) * -->
+          <div style="margin-bottom: 14px;">
+            <label style="font-size: 11px; font-weight: 700; color: var(--primary-ink); display: block; margin-bottom: 4px;">Dimensions (cm) *</label>
+            <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px;">
+              <div>
+                <span style="font-size: 9px; font-weight: 700; color: var(--meta-gray); text-transform: uppercase; display: block; margin-bottom: 2px;">LENGTH</span>
+                <input type="number" id="new-order-length" class="form-control font-mono" style="text-align: center; font-size: 13px;" value="22" required>
+              </div>
+              <div>
+                <span style="font-size: 9px; font-weight: 700; color: var(--meta-gray); text-transform: uppercase; display: block; margin-bottom: 2px;">WIDTH</span>
+                <input type="number" id="new-order-width" class="form-control font-mono" style="text-align: center; font-size: 13px;" value="15" required>
+              </div>
+              <div>
+                <span style="font-size: 9px; font-weight: 700; color: var(--meta-gray); text-transform: uppercase; display: block; margin-bottom: 2px;">HEIGHT</span>
+                <input type="number" id="new-order-height" class="form-control font-mono" style="text-align: center; font-size: 13px;" value="6" required>
+              </div>
+            </div>
+          </div>
+
+          <!-- Shipping Destination Address -->
+          <div style="border-top: 1px dashed var(--hairline-border); padding-top: 12px; margin-bottom: 14px;">
+            <div style="font-size: 11px; font-weight: 800; color: var(--primary-ink); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px;">
+              Shipping Destination Address (Address Fields Only)
+            </div>
+
+            <div class="form-group" style="margin-bottom: 8px;">
+              <label class="form-label" for="new-order-address" style="font-size: 11px; font-weight: 700;">Full Street Address *</label>
+              <input type="text" id="new-order-address" class="form-control" placeholder="House / Flat / Street / Landmark">
+              <div id="error-address" class="field-error-msg" style="display: none; color: #ef4444; font-size: 10px; margin-top: 3px; font-weight: 600;"></div>
+            </div>
+
+            <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px;">
+              <div class="form-group" style="margin-bottom: 0;">
+                <label class="form-label" for="new-order-city" style="font-size: 10px; font-weight: 700;">City</label>
+                <input type="text" id="new-order-city" class="form-control" placeholder="City">
+              </div>
+              <div class="form-group" style="margin-bottom: 0;">
+                <label class="form-label" for="new-order-state" style="font-size: 10px; font-weight: 700;">State</label>
+                <input type="text" id="new-order-state" class="form-control" placeholder="State" value="India">
+              </div>
+              <div class="form-group" style="margin-bottom: 0;">
+                <label class="form-label" for="new-order-pincode" style="font-size: 10px; font-weight: 700;">Pincode *</label>
+                <input type="text" id="new-order-pincode" class="form-control font-mono" placeholder="6 digits">
+                <div id="error-pincode" class="field-error-msg" style="display: none; color: #ef4444; font-size: 10px; margin-top: 3px; font-weight: 600;"></div>
+              </div>
+            </div>
+          </div>
+
+          <button type="submit" id="btn-submit-new-order" class="btn-gold-primary" style="width: 100%; height: 46px; font-size: 14px; font-weight: 700; border-radius: var(--radius-md);">
+            <span>Submit Order for Approval</span>
           </button>
         </form>
       </div>
