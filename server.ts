@@ -16,7 +16,12 @@ import { initializeFirestore, collection, doc, getDoc, getDocs, setDoc, deleteDo
 dotenv.config();
 
 import { renderShippingLabelHtml } from './src/utils/shippingLabelTemplate';
-import { selectCourierCandidates } from './src/utils/courierSelector';
+import { 
+  selectPriorityCourierPlan, 
+  selectCourierCandidates, 
+  executePriorityAwbAssignment,
+  detectOrderType 
+} from './src/utils/priorityCourierModule';
 
 setLogLevel('silent');
 
@@ -4991,13 +4996,15 @@ app.post('/api/shiprocket/order/priority-book', async (req, res) => {
       ];
     }
 
-    // 2 & 3. Select couriers via configuration-driven Priority Courier module
-    let priorityCourierCandidates = selectCourierCandidates(orderToBook, couriersList);
+    // 2 & 3. Select couriers via separate, configuration-driven Priority Courier module
+    const priorityPlan = selectPriorityCourierPlan(orderToBook, couriersList);
+    const priorityCourierCandidates = priorityPlan.candidates;
 
     if (priorityCourierCandidates.length === 0) {
       return res.status(400).json({
         success: false,
-        error: `No serviceable courier partners could be found for Pincode ${orderToBook.address.pincode} matching the priority sequence.`
+        error: `No serviceable courier partners could be found for Pincode ${orderToBook.address.pincode} matching the priority sequence.`,
+        skippedTiers: priorityPlan.skippedTiers
       });
     }
 
@@ -5009,6 +5016,7 @@ app.post('/api/shiprocket/order/priority-book', async (req, res) => {
     let successfulCourierId = priorityCourierCandidates[0].courierId;
     let labelGenerated = false;
     let bookedRate = priorityCourierCandidates[0].rate;
+    let assignedTierDetails: any = null;
 
     // 4. Book the chosen Courier
     if (isLiveConfigured()) {
@@ -5076,52 +5084,46 @@ app.post('/api/shiprocket/order/priority-book', async (req, res) => {
           });
         }
 
-        // Try Assigning AWB matching the Priority Sequence
-        let lastAwbError = '';
-        for (const candidate of priorityCourierCandidates) {
-          try {
-            console.log(`[Shiprocket Priority Booking] Trying AWB assignment with courier ${candidate.courierName} (${candidate.courierId})`);
-            const awbPayload = { shipment_id: shipmentId, courier_id: candidate.courierId };
-            let awbData = await shiprocket.rawRequest('/courier/assign/awb', 'POST', headers, awbPayload);
-            let testAwbCode = awbData?.response?.data?.awb_code || awbData?.data?.awb_code || awbData?.awb_code || awbData?.response?.awb_code || '';
-            
-            if (testAwbCode) {
-              awbCode = testAwbCode;
-              assignedCourierName = awbData?.response?.data?.courier_name || candidate.courierName;
-              successfulCourierId = candidate.courierId;
-              bookedRate = candidate.rate;
-              console.log(`[Courier Assignment] Successfully assigned ${assignedCourierName} from Tier: ${candidate.tierName} (Rank: ${candidate.tierRank}, Order Type: ${candidate.orderType})`);
-              break; // Success! Stop falling back.
-            } else {
-              lastAwbError = awbData?.response?.data?.awb_assign_error || awbData?.message || awbData?.response?.data?.message || 'Empty AWB code returned.';
-              console.log(`[Shiprocket] Courier ${candidate.courierId} failed AWB: ${lastAwbError}. Moving to next fallback...`);
+        // Execute AWB assignment with priority fallback and auto-assign fallback
+        const awbResult = await executePriorityAwbAssignment({
+          order: orderToBook,
+          shipmentId,
+          candidates: priorityCourierCandidates,
+          skippedTiers: priorityPlan.skippedTiers,
+          assignAwbFn: async (courierId) => {
+            const awbPayload: any = { shipment_id: shipmentId };
+            if (courierId) {
+              awbPayload.courier_id = courierId;
             }
-          } catch (awbErr: any) {
-            lastAwbError = awbErr.message || String(awbErr);
-            console.log(`[Shiprocket] Courier ${candidate.courierId} failed AWB: ${lastAwbError}. Moving to next fallback...`);
-          }
-        }
+            const awbData = await shiprocket.rawRequest('/courier/assign/awb', 'POST', headers, awbPayload);
+            const foundAwb = awbData?.response?.data?.awb_code || awbData?.data?.awb_code || awbData?.awb_code || awbData?.response?.awb_code || '';
+            const cName = awbData?.response?.data?.courier_name || '';
+            const cId = awbData?.response?.data?.courier_company_id || courierId;
+            const errStr = awbData?.response?.data?.awb_assign_error || awbData?.message || awbData?.response?.data?.message || (!foundAwb ? 'Empty AWB code returned' : undefined);
 
-        if (!awbCode) {
-          console.warn('[Shiprocket Priority Booking] All fallback sequence couriers failed. Attempting General Auto-Assign...');
-          try {
-             let autoAwbData = await shiprocket.rawRequest('/courier/assign/awb', 'POST', headers, { shipment_id: shipmentId });
-             let testAwbCode = autoAwbData?.response?.data?.awb_code || autoAwbData?.data?.awb_code || autoAwbData?.awb_code || autoAwbData?.response?.awb_code || '';
-             
-             if (testAwbCode) {
-               awbCode = testAwbCode;
-               assignedCourierName = autoAwbData?.response?.data?.courier_name || 'Shiprocket Auto-Assigned';
-               successfulCourierId = autoAwbData?.response?.data?.courier_company_id || 'AUTO';
-               console.log(`[Courier Assignment] Exhausted config tiers. Successfully Auto-Assigned courier: ${assignedCourierName}`);
-             } else {
-               lastAwbError = autoAwbData?.response?.data?.awb_assign_error || autoAwbData?.message || autoAwbData?.response?.data?.message || 'Empty AWB code returned on auto-assign.';
-             }
-          } catch (autoAwbErr: any) {
-             lastAwbError = autoAwbErr.message || String(autoAwbErr);
+            return {
+              success: Boolean(foundAwb),
+              awbCode: foundAwb,
+              courierName: cName,
+              courierCompanyId: cId,
+              error: errStr
+            };
           }
-        }
+        });
 
-        if (!awbCode) {
+        if (awbResult.success && awbResult.awbCode) {
+          awbCode = awbResult.awbCode;
+          assignedCourierName = awbResult.assignedCourierName || assignedCourierName;
+          successfulCourierId = awbResult.assignedCourierId || successfulCourierId;
+          bookedRate = awbResult.rate || bookedRate;
+          assignedTierDetails = {
+            tierName: awbResult.assignedTierName,
+            tierRank: awbResult.assignedTierRank,
+            isAutoAssigned: awbResult.isAutoAssigned,
+            orderType: awbResult.orderType
+          };
+        } else {
+          const lastAwbError = awbResult.lastError || 'AWB assignment failed across all prioritized tiers.';
           console.error('[Shiprocket Priority Booking Failed] All fallback sequence couriers AND Auto-Assign failed.');
           try {
              await shiprocket.rawRequest('/orders/cancel', 'POST', headers, { ids: [Number(shiprocketId) || shiprocketId] });
@@ -5147,7 +5149,9 @@ app.post('/api/shiprocket/order/priority-book', async (req, res) => {
           return res.status(400).json({
             success: false,
             status: 'failed',
-            error: orderToBook.errorMessage
+            error: orderToBook.errorMessage,
+            skippedTiers: awbResult.skippedTiers,
+            auditTrail: awbResult.auditTrail
           });
         }
 
@@ -5210,12 +5214,19 @@ app.post('/api/shiprocket/order/priority-book', async (req, res) => {
     orderToBook.pickupLocation = resolvedPickupLocation.name;
     orderToBook.pickupAddress = resolvedPickupLocation;
     orderToBook.labelUrl = labelGenerated ? labelUrl : undefined;
+    const assignedTierSummary = assignedTierDetails ? `${assignedTierDetails.tierName} (Tier ${assignedTierDetails.tierRank})` : 'Priority Candidate';
+    const skippedSummary = priorityPlan.skippedTiers.length > 0 
+      ? priorityPlan.skippedTiers.map(s => `[Tier ${s.tierRank} (${s.tierName}): ${s.reason}]`).join('; ')
+      : 'None';
+    
+    console.log(`[Priority Order Completed] Order ${orderToBook.orderNumber || orderToBook.id}: Assigned Tier: "${assignedTierSummary}", Courier: "${assignedCourierName}" (ID: ${successfulCourierId}, Rate: ₹${bookedRate}), AWB: "${awbCode}". Skipped Tiers: ${skippedSummary}.`);
+
     orderToBook.trackingHistory = [
       { 
         date: new Date().toISOString().replace('T', ' ').slice(0, 16), 
         status: 'Booked', 
         location: `${resolvedPickupLocation.name} (${resolvedPickupLocation.city || 'Shiprocket'})`, 
-        activity: `Shipment booked via priority match: ${assignedCourierName}. AWB: ${awbCode}.${labelGenerated ? ' Shipping label generated.' : ' Label pending.'}` 
+        activity: `Shipment booked via priority match: ${assignedCourierName} [Tier: ${assignedTierSummary}]. AWB: ${awbCode}.${labelGenerated ? ' Shipping label generated.' : ' Label pending.'}` 
       }
     ];
 
@@ -5229,6 +5240,9 @@ app.post('/api/shiprocket/order/priority-book', async (req, res) => {
       shipmentId: String(shipmentId),
       awbCode: String(awbCode),
       courierName: assignedCourierName,
+      courierId: successfulCourierId,
+      assignedTier: assignedTierDetails,
+      skippedTiers: priorityPlan.skippedTiers,
       pickupLocation: resolvedPickupLocation.name,
       rate: bookedRate,
       labelUrl: orderToBook.labelUrl,
