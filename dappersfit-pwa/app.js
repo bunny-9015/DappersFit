@@ -1508,7 +1508,7 @@
           </div>
 
           <div style="margin-top: 10px; padding-top: 8px; border-top: 1px dashed #9CA3AF; display: flex; justify-content: space-between; font-size: 10px; color: #6B7280;">
-            <span>Pickup Hub: Ashok og (Mumbai 400001)</span>
+            <span>Pickup Hub: ${escapeHtml(order.pickupLocation || 'dapperss (Chennai 600002)')}</span>
             <span>Wt: ${order.weight || 0.5} kg</span>
           </div>
         </div>
@@ -1640,8 +1640,8 @@
     showToast(`Booking Priority Air for ${order.orderNumber}...`, 'info');
 
     try {
-      const pName = (order.pickupLocation && !order.pickupLocation.toLowerCase().includes('dapper')) ? order.pickupLocation : 'Ashok og ';
-      const pPin = (order.pickupLocation && !order.pickupLocation.toLowerCase().includes('dapper')) ? (order.pickupAddress?.pincode || '400001') : '400001';
+      const pName = (order.pickupLocation && !order.pickupLocation.toLowerCase().includes('simulated')) ? order.pickupLocation : 'dapperss';
+      const pPin = (order.pickupLocation && !order.pickupLocation.toLowerCase().includes('simulated')) ? (order.pickupAddress?.pincode || '600002') : '600002';
 
       const res = await apiFetch('/api/shiprocket/order/priority-book', {
         method: 'POST',
@@ -3161,7 +3161,7 @@
             </div>
             <div style="font-size:11px; color:var(--body-slate); line-height:1.5;">
               Account: <strong style="color:var(--primary-ink);">kamathamlokesh1234@gmail.com</strong><br>
-              Pickup Hub: <strong style="color:var(--primary-ink);">Ashok og (Mumbai 400001)</strong><br>
+              Pickup Hub: <strong style="color:var(--primary-ink);">dapperss (Chennai 600002)</strong><br>
               Wallet Balance: <strong class="font-mono" style="color:var(--executive-gold);">${formatCurrency(liveBal)}</strong>
             </div>
           </div>

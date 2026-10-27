@@ -428,11 +428,11 @@ async function validateAndResolvePickupLocation(
     }
   }
 
-  // If no location was requested, only use default if legitimately specified/allowed
+  // If no location was requested, default to primary warehouse 'dapperss' (Chennai 600002)
   if (allowDefaultFallback) {
-    const ashokDefault = registered.find(r => r.name.toLowerCase().includes('ashok'));
-    const defaultLoc = ashokDefault || registered[0];
-    console.log(`[Shiprocket Pickup Resolution] Using legitimately specified default warehouse: "${defaultLoc.name}" (${defaultLoc.pincode})`);
+    const dappersDefault = registered.find(r => r.name.toLowerCase().includes('dappers') || r.isPrimary);
+    const defaultLoc = dappersDefault || registered.find(r => r.name.toLowerCase().includes('ashok')) || registered[0];
+    console.log(`[Shiprocket Pickup Resolution] Using default warehouse: "${defaultLoc.name}" (${defaultLoc.pincode})`);
     return { success: true, location: defaultLoc };
   }
 
@@ -444,11 +444,11 @@ async function validateAndResolvePickupLocation(
 
 // Central helper to retrieve active registered warehouse details from Shiprocket
 async function getRegisteredPickupDetails(headers: any) {
-  const res = await validateAndResolvePickupLocation(headers, undefined, undefined, undefined, true);
+  const res = await validateAndResolvePickupLocation(headers, 'dapperss', '600002', undefined, true);
   if (res.success && res.location) {
     return { pickupLocation: res.location.name, pickupPostcode: res.location.pincode };
   }
-  return { pickupLocation: 'Ashok og ', pickupPostcode: '400001' };
+  return { pickupLocation: 'dapperss', pickupPostcode: '600002' };
 }
 
 // Controlled retry helper to generate and verify shipping label PDF from Shiprocket
@@ -4908,12 +4908,19 @@ app.post('/api/shiprocket/order/priority-book', async (req, res) => {
 
   try {
     let couriersList = [];
-    let targetLocationName = requestedLocationName || orderToBook.pickupLocation;
+    // In priority courier booking, the shipments should book on dappers pickup address: default is dapperss (Chennai 600002)
+    let targetLocationName = (requestedLocationName || orderToBook.pickupLocation || '').trim();
+    let targetPostcode = pickupPostcode || pickupAddress?.pincode;
+
     if (!targetLocationName || 
         targetLocationName.toLowerCase().includes('dapper') || 
         targetLocationName.toLowerCase().includes('chennai') || 
-        targetLocationName.toLowerCase().includes('simulated')) {
-      targetLocationName = 'Ashok og ';
+        targetLocationName.toLowerCase().includes('simulated') ||
+        !requestedLocationName) {
+      targetLocationName = 'dapperss';
+      if (!targetPostcode) {
+        targetPostcode = '600002';
+      }
     }
     const allowDefault = true;
 
@@ -4925,7 +4932,7 @@ app.post('/api/shiprocket/order/priority-book', async (req, res) => {
       const pickupRes = await validateAndResolvePickupLocation(
         headers,
         targetLocationName,
-        pickupPostcode || pickupAddress?.pincode,
+        targetPostcode,
         pickupAddress,
         allowDefault
       );
@@ -4966,7 +4973,7 @@ app.post('/api/shiprocket/order/priority-book', async (req, res) => {
       const simPickupRes = await validateAndResolvePickupLocation(
         null,
         targetLocationName,
-        pickupPostcode || pickupAddress?.pincode,
+        targetPostcode,
         pickupAddress,
         allowDefault
       );
