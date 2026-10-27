@@ -612,7 +612,7 @@
           </div>
 
           <!-- Catalog & Employee Assignment -->
-          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px;">
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 8px;">
             <div class="form-group" style="margin-bottom: 0;">
               <label class="form-label" for="new-order-assigned-employee" style="font-size: 11px; font-weight: 700;">Assign Employee (optional)</label>
               <select id="new-order-assigned-employee" class="form-control" style="font-size: 12px;">
@@ -620,10 +620,38 @@
               </select>
             </div>
             <div class="form-group" style="margin-bottom: 0;">
-              <label class="form-label" for="new-order-catalog-picker" style="font-size: 11px; font-weight: 700;">Pick from Catalog (optional)</label>
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px;">
+                <label class="form-label" for="new-order-catalog-picker" style="font-size: 11px; font-weight: 700; margin-bottom: 0;">Pick from Catalog (optional)</label>
+                <button type="button" id="btn-quick-manage-catalog" style="background: none; border: none; font-size: 11px; font-weight: 700; color: var(--executive-gold); cursor: pointer; padding: 0; text-decoration: underline;">
+                  ⚙️ Catalog
+                </button>
+              </div>
               <select id="new-order-catalog-picker" class="form-control" style="font-size: 12px;">
                 <option value="">Choose item...</option>
               </select>
+            </div>
+          </div>
+
+          <!-- Selected Catalog Product Card with Admin Edit/Delete Controls -->
+          <div id="catalog-selected-product-card" style="display: none; background: #FAF8F5; border: 1.5px solid rgba(184, 134, 47, 0.35); border-radius: var(--radius-sm); padding: 8px 12px; margin-bottom: 12px; box-shadow: 0 1px 4px rgba(184, 134, 47, 0.08);">
+            <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px;">
+              <div style="flex: 1; min-width: 0;">
+                <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+                  <span class="font-mono" id="cat-card-sku" style="font-size: 11px; font-weight: 800; color: var(--executive-gold); background: rgba(184,134,47,0.12); padding: 2px 6px; border-radius: 4px;">SKU</span>
+                  <span id="cat-card-name" style="font-size: 12px; font-weight: 700; color: var(--primary-ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Product Name</span>
+                </div>
+                <div style="font-size: 11px; color: var(--meta-gray); margin-top: 3px;" id="cat-card-meta">
+                  Category • Weight: 0.8 kg • Price: ₹1,499 • Stock: 50
+                </div>
+              </div>
+              <div style="display: flex; gap: 6px; flex-shrink: 0;" id="cat-card-admin-actions">
+                <button type="button" id="btn-cat-edit-selected" style="background: var(--surface-container); border: 1px solid var(--hairline-border); color: var(--executive-gold); font-size: 11px; font-weight: 700; padding: 4px 10px; border-radius: 6px; cursor: pointer;">
+                  ✏️ Edit
+                </button>
+                <button type="button" id="btn-cat-delete-selected" style="background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.2); color: #EF4444; font-size: 11px; font-weight: 700; padding: 4px 10px; border-radius: 6px; cursor: pointer;">
+                  🗑️ Delete
+                </button>
+              </div>
             </div>
           </div>
 

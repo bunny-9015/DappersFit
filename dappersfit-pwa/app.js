@@ -15,6 +15,48 @@
   const STORAGE_KEY_CUSTOMERS = 'df_pwa_cached_customers';
   const STORAGE_KEY_WALLET = 'df_pwa_cached_wallet';
 
+  // --- Authentic Default Products Catalog (Parity with data_products.json) ---
+  const DEFAULT_PRODUCTS_CATALOG = [
+    { id: "p-drn", sku: "drn", name: "Drone Action Camera", weight: 0.8, stock: 500, category: "Drone Action Cameras", price: 14999, dimensions: { length: 22, width: 15, height: 6 } },
+    { id: "p-wg", sku: "wg", name: "Wide Gimbal Camera", weight: 2.5, stock: 500, category: "Drone Action Cameras", price: 18999, dimensions: { length: 28, width: 20, height: 10 } },
+    { id: "p-ac", sku: "ac", name: "Action Cam Pro", weight: 0.5, stock: 500, category: "Drone Action Cameras", price: 9999, dimensions: { length: 18, width: 12, height: 5 } },
+    { id: "p-m22", sku: "m22", name: "GS M22 Quad", weight: 0.8, stock: 500, category: "Drone Action Cameras", price: 12999, dimensions: { length: 22, width: 15, height: 6 } },
+    { id: "p-m15", sku: "m15", name: "GS M15 Cam", weight: 0.8, stock: 500, category: "Drone Action Cameras", price: 8999, dimensions: { length: 22, width: 15, height: 6 } },
+    { id: "p-drn-cmb", sku: "drn cmb", name: "Drone 4K Combo Kit", weight: 1.0, stock: 500, category: "Drone Action Cameras", price: 16999, dimensions: { length: 24, width: 18, height: 8 } },
+    { id: "p-erlx", sku: "Erlx", name: "Erlx Smart Watch", weight: 1.0, stock: 50, category: "Other / Custom", price: 2499, dimensions: { length: 20, width: 14, height: 5 } },
+    { id: "p-og", sku: "og", name: "Erlx OG Edition", weight: 1.0, stock: 50, category: "Other / Custom", price: 2999, dimensions: { length: 20, width: 14, height: 5 } },
+    { id: "p-fos", sku: "Fos", name: "Fossil Chrono Watch", weight: 1.0, stock: 50, category: "Other / Custom", price: 3499, dimensions: { length: 20, width: 14, height: 5 } },
+    { id: "p-d", sku: "D", name: "Diesel Mega Chief Watch", weight: 1.0, stock: 50, category: "Drone Action Cameras", price: 3499, dimensions: { length: 20, width: 14, height: 5 } },
+    { id: "p-rado", sku: "rado", name: "Rado Diastar Classic", weight: 1.0, stock: 50, category: "Drone Action Cameras", price: 4999, dimensions: { length: 20, width: 14, height: 5 } },
+    { id: "p-woop", sku: "woop", name: "Whoop Fitness Band", weight: 0.6, stock: 50, category: "Other / Custom", price: 1999, dimensions: { length: 18, width: 12, height: 5 } },
+    { id: "p-rc", sku: "rc", name: "RC High-Speed Car 4WD", weight: 2.0, stock: 50, category: "other", price: 3499, dimensions: { length: 28, width: 20, height: 10 } },
+    { id: "p-3axis", sku: "drn", name: "3-Axis Gimbal Drone", weight: 1.5, stock: 50, category: "Drone", price: 14999, dimensions: { length: 24, width: 18, height: 8 } },
+    { id: "p-buds", sku: "display", name: "Display Wireless Earbuds", weight: 0.5, stock: 50, category: "Drone Action Cameras", price: 1499, dimensions: { length: 15, width: 10, height: 4 } },
+    { id: "p-pro", sku: "pro", name: "4K Home Projector HD", weight: 2.0, stock: 50, category: "Drone Action Cameras", price: 12499, dimensions: { length: 28, width: 20, height: 10 } },
+    { id: "p-omega", sku: "om", name: "Omega Seamaster Watch", weight: 1.0, stock: 25, category: "watch", price: 5999, dimensions: { length: 20, width: 14, height: 5 } },
+    { id: "p-cas", sku: "cas", name: "Casio Vintage Silver Watch", weight: 0.85, stock: 25, category: "Drone Action Cameras", price: 1499, dimensions: { length: 20, width: 14, height: 5 } },
+    { id: "p-gsk", sku: "gsk", name: "G-Shock Rugged Sport Watch", weight: 0.85, stock: 25, category: "Drone Action Cameras", price: 2499, dimensions: { length: 20, width: 14, height: 5 } }
+  ];
+
+  // Helper to determine if current session has admin/manager privileges
+  function isUserAdmin() {
+    if (!state.user) return true; // Standalone / open admin mode
+    const role = (state.user.role || '').toLowerCase().trim();
+    const email = (state.user.email || state.user.username || '').toLowerCase().trim();
+    return (
+      role === 'admin' ||
+      role === 'operations manager' ||
+      role === 'inventory lead' ||
+      role.includes('admin') ||
+      role.includes('manager') ||
+      role.includes('lead') ||
+      email.includes('admin') ||
+      email.includes('kamatham') ||
+      email.includes('lokesh') ||
+      email.includes('srinuseeker')
+    );
+  }
+
   // --- Application State Store ---
   const state = {
     user: (() => {
@@ -35,7 +77,16 @@
     tickets: [],
     ticketFlagFilter: 'all',
     ticketSearchQuery: '',
-    products: [],
+    products: (() => {
+      try {
+        const saved = localStorage.getItem(STORAGE_KEY_PRODUCTS);
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        }
+      } catch (_) {}
+      return [...DEFAULT_PRODUCTS_CATALOG];
+    })(),
     customers: [],
     walletDetails: { available_balance: 1500, hold_amount: 0 },
     employees: [],
@@ -1709,6 +1760,408 @@
     showToast(`Order ${order.orderNumber} deleted`, 'info');
   }
 
+  // =========================================================================
+  // PRODUCT CATALOG MANAGEMENT & ORDER INTEGRATION ENGINE (ADMIN EDIT/DELETE)
+  // =========================================================================
+
+  function populateOrderCatalogPicker(preselectValue = '') {
+    const catalogSelect = document.getElementById('new-order-catalog-picker');
+    if (!catalogSelect) return;
+
+    catalogSelect.innerHTML = '<option value="">Choose item...</option>';
+    const prods = (Array.isArray(state.products) && state.products.length > 0) ? state.products : DEFAULT_PRODUCTS_CATALOG;
+
+    prods.forEach(p => {
+      const opt = document.createElement('option');
+      const val = p.id || p.sku || p.name;
+      opt.value = val;
+      const skuLabel = p.sku ? ` (${p.sku.toUpperCase()})` : '';
+      const priceVal = p.price && p.price > 0 ? p.price : 1499;
+      opt.textContent = `${p.name || p.sku}${skuLabel} - ₹${Number(priceVal).toLocaleString()}`;
+      opt.setAttribute('data-id', p.id || '');
+      opt.setAttribute('data-sku', p.sku || '');
+      opt.setAttribute('data-name', p.name || p.sku || '');
+      opt.setAttribute('data-price', priceVal);
+      opt.setAttribute('data-weight', p.weight || 0.5);
+      opt.setAttribute('data-stock', p.stock ?? 50);
+      opt.setAttribute('data-cat', p.category || 'Drone Action Cameras');
+      if (p.dimensions) {
+        opt.setAttribute('data-length', p.dimensions.length || 22);
+        opt.setAttribute('data-width', p.dimensions.width || 15);
+        opt.setAttribute('data-height', p.dimensions.height || 6);
+      }
+      if (preselectValue && (val === preselectValue || p.sku === preselectValue || p.name === preselectValue)) {
+        opt.selected = true;
+      }
+      catalogSelect.appendChild(opt);
+    });
+
+    if (preselectValue) {
+      applySelectedCatalogProduct();
+    } else {
+      const card = document.getElementById('catalog-selected-product-card');
+      if (card) card.style.display = 'none';
+    }
+
+    catalogSelect.onchange = () => {
+      applySelectedCatalogProduct();
+      haptic('light');
+    };
+  }
+
+  function applySelectedCatalogProduct() {
+    const catalogSelect = document.getElementById('new-order-catalog-picker');
+    const card = document.getElementById('catalog-selected-product-card');
+    if (!catalogSelect) return;
+
+    const selectedOpt = catalogSelect.options[catalogSelect.selectedIndex];
+    if (!selectedOpt || !selectedOpt.value) {
+      if (card) card.style.display = 'none';
+      return;
+    }
+
+    const prodVal = selectedOpt.value;
+    const p = state.products.find(item => (item.id === prodVal || item.sku === prodVal || item.name === prodVal)) || {
+      id: selectedOpt.getAttribute('data-id'),
+      sku: selectedOpt.getAttribute('data-sku') || prodVal,
+      name: selectedOpt.getAttribute('data-name') || prodVal,
+      price: Number(selectedOpt.getAttribute('data-price')) || 1499,
+      weight: Number(selectedOpt.getAttribute('data-weight')) || 0.5,
+      stock: Number(selectedOpt.getAttribute('data-stock')) ?? 50,
+      category: selectedOpt.getAttribute('data-cat') || 'Drone Action Cameras'
+    };
+
+    // Auto-fill order inputs
+    const itemInput = document.getElementById('new-order-item-name');
+    const amountInput = document.getElementById('new-order-amount');
+    const weightInput = document.getElementById('new-order-weight');
+    const lenInput = document.getElementById('new-order-length');
+    const widthInput = document.getElementById('new-order-width');
+    const heightInput = document.getElementById('new-order-height');
+
+    if (itemInput) itemInput.value = p.name || p.sku;
+    if (amountInput) amountInput.value = p.price && p.price > 0 ? p.price : 1499;
+    if (weightInput) weightInput.value = p.weight || 0.5;
+
+    // Dimensions auto-fill
+    const boxLen = p.dimensions?.length || (Number(p.weight) >= 2 ? 28 : 22);
+    const boxWidth = p.dimensions?.width || (Number(p.weight) >= 2 ? 20 : 15);
+    const boxHeight = p.dimensions?.height || (Number(p.weight) >= 2 ? 10 : 6);
+    if (lenInput) lenInput.value = boxLen;
+    if (widthInput) widthInput.value = boxWidth;
+    if (heightInput) heightInput.value = boxHeight;
+
+    // Display selected product card
+    if (card) {
+      card.style.display = 'block';
+      const skuEl = document.getElementById('cat-card-sku');
+      const nameEl = document.getElementById('cat-card-name');
+      const metaEl = document.getElementById('cat-card-meta');
+      const adminActions = document.getElementById('cat-card-admin-actions');
+
+      if (skuEl) skuEl.textContent = (p.sku || 'SKU').toUpperCase();
+      if (nameEl) nameEl.textContent = p.name || p.sku;
+      if (metaEl) {
+        metaEl.innerHTML = `${escapeHtml(p.category || 'General')} • Weight: <strong>${p.weight || 0.5} kg</strong> • Price: <strong>₹${Number(p.price || 1499).toLocaleString()}</strong> • Stock: <strong>${p.stock ?? 50}</strong> • Box: <strong>${boxLen}x${boxWidth}x${boxHeight} cm</strong>`;
+      }
+
+      if (adminActions) {
+        const isAdmin = isUserAdmin();
+        adminActions.style.display = isAdmin ? 'flex' : 'none';
+
+        // Edit button
+        const editBtn = document.getElementById('btn-cat-edit-selected');
+        if (editBtn) {
+          editBtn.onclick = (e) => {
+            e.preventDefault();
+            showProductFormModal(p, (updatedProd) => {
+              populateOrderCatalogPicker(updatedProd.id || updatedProd.sku);
+            });
+          };
+        }
+
+        // Delete button
+        const delBtn = document.getElementById('btn-cat-delete-selected');
+        if (delBtn) {
+          delBtn.onclick = (e) => {
+            e.preventDefault();
+            deleteCatalogProduct(p, () => {
+              populateOrderCatalogPicker('');
+            });
+          };
+        }
+      }
+    }
+  }
+
+  async function deleteCatalogProduct(p, onDeleted) {
+    if (!p) return;
+    const targetName = p.name || p.sku;
+    if (!confirm(`Are you sure you want to permanently delete "${targetName}" from the product catalog?`)) {
+      return;
+    }
+    haptic('heavy');
+    showToast(`Deleting ${targetName}...`, 'info');
+    const targetId = p.id || p.sku;
+    state.products = state.products.filter(item => (item.id !== p.id && item.sku !== p.sku));
+    localStorage.setItem(STORAGE_KEY_PRODUCTS, JSON.stringify(state.products));
+
+    try {
+      if (window.FirebaseService && typeof window.FirebaseService.deleteProduct === 'function') {
+        window.FirebaseService.deleteProduct(targetId).catch(err => console.warn('[Firebase] deleteProduct warning:', err));
+      }
+      await apiFetch(`/api/products/${encodeURIComponent(targetId)}`, {
+        method: 'DELETE',
+        headers: { 'x-user-role': 'admin' }
+      });
+      showToast(`Product "${targetName}" deleted successfully.`, 'success');
+    } catch (err) {
+      console.warn('Backend delete error:', err);
+    }
+
+    // Refresh catalog submodule view if active
+    const prodSub = document.getElementById('submodule-sheet');
+    if (prodSub && prodSub.classList.contains('active')) {
+      const title = document.getElementById('submodule-title');
+      if (title && title.textContent.includes('Products')) {
+        renderProductsCatalogSubmodule();
+      }
+    }
+    if (typeof onDeleted === 'function') onDeleted();
+  }
+
+  function showProductFormModal(existing, onSavedCallback) {
+    const isEdit = !!existing;
+    const title = isEdit ? 'Edit Catalog Product' : 'Register New Product';
+    const formHtml = `
+      <div style="display:flex; flex-direction:column; gap:12px;">
+        <div style="font-size:12px; color:var(--meta-gray);">${isEdit ? `Editing SKU: <strong>${escapeHtml(existing.sku || existing.name)}</strong>` : 'Add a new product to the warehouse stock registry'}</div>
+        
+        <div>
+          <label style="font-size:11px; font-weight:700; color:var(--primary-ink); display:block; margin-bottom:4px;">Product Name *</label>
+          <input type="text" id="pwa-prod-name" value="${escapeHtml(existing?.name || '')}" placeholder="e.g. Drone 4K Action Camera" style="width:100%; padding:9px 12px; border-radius:8px; border:1px solid var(--hairline-border); font-size:13px; box-sizing:border-box;" />
+        </div>
+
+        <div>
+          <label style="font-size:11px; font-weight:700; color:var(--primary-ink); display:block; margin-bottom:4px;">SKU Code *</label>
+          <input type="text" id="pwa-prod-sku" value="${escapeHtml(existing?.sku || '')}" placeholder="e.g. DRN-4K, AC, WG" style="width:100%; padding:9px 12px; border-radius:8px; border:1px solid var(--hairline-border); font-size:13px; font-family:monospace; box-sizing:border-box;" />
+        </div>
+
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
+          <div>
+            <label style="font-size:11px; font-weight:700; color:var(--primary-ink); display:block; margin-bottom:4px;">Category</label>
+            <input type="text" id="pwa-prod-cat" value="${escapeHtml(existing?.category || 'Drone Action Cameras')}" placeholder="Category" style="width:100%; padding:8px 10px; border-radius:8px; border:1px solid var(--hairline-border); font-size:13px; box-sizing:border-box;" />
+          </div>
+          <div>
+            <label style="font-size:11px; font-weight:700; color:var(--primary-ink); display:block; margin-bottom:4px;">Price (₹) *</label>
+            <input type="number" id="pwa-prod-price" value="${existing?.price !== undefined ? existing.price : 1499}" placeholder="1499" style="width:100%; padding:8px 10px; border-radius:8px; border:1px solid var(--hairline-border); font-size:13px; font-family:monospace; box-sizing:border-box;" />
+          </div>
+        </div>
+
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
+          <div>
+            <label style="font-size:11px; font-weight:700; color:var(--primary-ink); display:block; margin-bottom:4px;">Weight (kg) *</label>
+            <input type="number" step="0.01" id="pwa-prod-weight" value="${existing?.weight !== undefined ? existing.weight : 0.5}" placeholder="0.5" style="width:100%; padding:8px 10px; border-radius:8px; border:1px solid var(--hairline-border); font-size:13px; font-family:monospace; box-sizing:border-box;" />
+          </div>
+          <div>
+            <label style="font-size:11px; font-weight:700; color:var(--primary-ink); display:block; margin-bottom:4px;">Warehouse Stock</label>
+            <input type="number" id="pwa-prod-stock" value="${existing?.stock !== undefined ? existing.stock : 50}" placeholder="50" style="width:100%; padding:8px 10px; border-radius:8px; border:1px solid var(--hairline-border); font-size:13px; font-family:monospace; box-sizing:border-box;" />
+          </div>
+        </div>
+
+        <div>
+          <label style="font-size:11px; font-weight:700; color:var(--primary-ink); display:block; margin-bottom:4px;">Box Dimensions (cm) *</label>
+          <div style="display:grid; grid-template-columns:repeat(3, 1fr); gap:8px;">
+            <div>
+              <span style="font-size:9px; font-weight:700; color:var(--meta-gray); text-transform:uppercase; display:block; margin-bottom:2px;">LENGTH</span>
+              <input type="number" id="pwa-prod-len" value="${existing?.dimensions?.length || 22}" class="form-control font-mono" style="text-align:center; font-size:12px; padding:6px;" />
+            </div>
+            <div>
+              <span style="font-size:9px; font-weight:700; color:var(--meta-gray); text-transform:uppercase; display:block; margin-bottom:2px;">WIDTH</span>
+              <input type="number" id="pwa-prod-width" value="${existing?.dimensions?.width || 15}" class="form-control font-mono" style="text-align:center; font-size:12px; padding:6px;" />
+            </div>
+            <div>
+              <span style="font-size:9px; font-weight:700; color:var(--meta-gray); text-transform:uppercase; display:block; margin-bottom:2px;">HEIGHT</span>
+              <input type="number" id="pwa-prod-height" value="${existing?.dimensions?.height || 6}" class="form-control font-mono" style="text-align:center; font-size:12px; padding:6px;" />
+            </div>
+          </div>
+        </div>
+
+        <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:14px;">
+          <button id="btn-cancel-prod-form" class="btn-card-outline" style="padding:8px 14px; font-size:12px; font-weight:700;">Cancel</button>
+          <button id="btn-save-prod-form" class="btn-gold-primary" style="padding:8px 16px; font-size:12px; font-weight:700; border-radius:8px;">
+            <span>${isEdit ? 'Save Changes' : 'Register Product'}</span>
+          </button>
+        </div>
+      </div>
+    `;
+
+    openSubmoduleSheet(title, formHtml);
+
+    document.getElementById('btn-cancel-prod-form')?.addEventListener('click', () => {
+      renderProductsCatalogSubmodule();
+    });
+
+    document.getElementById('btn-save-prod-form')?.addEventListener('click', async () => {
+      const name = (document.getElementById('pwa-prod-name')?.value || '').trim();
+      const sku = (document.getElementById('pwa-prod-sku')?.value || '').trim();
+      const category = (document.getElementById('pwa-prod-cat')?.value || 'Drone Action Cameras').trim();
+      const price = Number(document.getElementById('pwa-prod-price')?.value) || 1499;
+      const weight = Number(document.getElementById('pwa-prod-weight')?.value) || 0.5;
+      const stock = Number(document.getElementById('pwa-prod-stock')?.value) || 50;
+      const length = Number(document.getElementById('pwa-prod-len')?.value) || 22;
+      const width = Number(document.getElementById('pwa-prod-width')?.value) || 15;
+      const height = Number(document.getElementById('pwa-prod-height')?.value) || 6;
+
+      if (!name || !sku) {
+        alert('Product name and SKU code are required.');
+        return;
+      }
+
+      haptic('medium');
+      showToast(isEdit ? 'Updating product...' : 'Adding product...', 'info');
+
+      const productPayload = {
+        id: existing?.id || `p-${Date.now()}-${Math.floor(Math.random() * 100000)}`,
+        name,
+        sku,
+        category,
+        price,
+        weight,
+        stock,
+        dimensions: { length, width, height }
+      };
+
+      if (isEdit) {
+        state.products = state.products.map(p => (p.id === existing.id || p.sku === existing.sku) ? productPayload : p);
+      } else {
+        state.products = [productPayload, ...state.products];
+      }
+      localStorage.setItem(STORAGE_KEY_PRODUCTS, JSON.stringify(state.products));
+
+      try {
+        if (window.FirebaseService && typeof window.FirebaseService.saveProduct === 'function') {
+          window.FirebaseService.saveProduct(productPayload).catch(err => console.warn('[Firebase] saveProduct warning:', err));
+        }
+        await apiFetch('/api/products', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-user-role': 'admin'
+          },
+          body: JSON.stringify(productPayload)
+        });
+        showToast(`Product "${name}" saved successfully.`, 'success');
+      } catch (err) {
+        console.warn('Backend save error:', err);
+      }
+
+      renderProductsCatalogSubmodule();
+      populateOrderCatalogPicker(productPayload.id || productPayload.sku);
+      if (typeof onSavedCallback === 'function') onSavedCallback(productPayload);
+    });
+  }
+
+  function renderProductsCatalogSubmodule(filterQuery = '') {
+    const isAdmin = isUserAdmin();
+    const prodList = (Array.isArray(state.products) && state.products.length > 0) ? state.products : DEFAULT_PRODUCTS_CATALOG;
+
+    const query = String(filterQuery || '').toLowerCase().trim();
+    const filtered = prodList.filter(p => {
+      if (!query) return true;
+      const corpus = `${p.sku || ''} ${p.name || ''} ${p.category || ''}`.toLowerCase();
+      return corpus.includes(query);
+    });
+
+    const html = `
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+        <div style="font-size:12px; color:var(--meta-gray);">Warehouse SKU Registry: <strong>${prodList.length} products</strong></div>
+        ${isAdmin ? `
+          <button id="btn-pwa-add-product" class="btn-gold-primary" style="padding:6px 12px; font-size:11px; border-radius:8px; height:auto; width:auto;">
+            <span>+ Add Product</span>
+          </button>
+        ` : ''}
+      </div>
+
+      <div style="margin-bottom:12px;">
+        <input type="search" id="pwa-catalog-search-input" value="${escapeHtml(filterQuery)}" placeholder="🔍 Search catalog by SKU, name, or category..." class="form-control" style="font-size:12px; padding:8px 12px; border-radius:8px;" />
+      </div>
+
+      <div id="pwa-products-container" style="display: flex; flex-direction: column; gap: 10px;">
+        ${filtered.length === 0 ? `
+          <div style="text-align:center; padding:24px 10px; color:var(--meta-gray); font-size:12px;">
+            No products match "${escapeHtml(filterQuery)}".
+          </div>
+        ` : filtered.map((p, idx) => {
+          const isAc = (p.sku || '').toLowerCase().trim() === 'ac';
+          const box = p.dimensions ? `${p.dimensions.length}x${p.dimensions.width}x${p.dimensions.height} cm` : (p.weight >= 2 ? '28x20x10 cm' : '22x15x6 cm');
+          return `
+            <div class="kpi-card" style="min-height: auto; border: 1px solid var(--hairline-border); padding: 12px; border-radius: 12px; background: var(--canvas);">
+              <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+                <div>
+                  <div style="display:flex; align-items:center; gap:6px;">
+                    <span class="font-mono" style="font-weight:800; font-size:13px; color:var(--executive-gold); background:rgba(184,134,47,0.12); padding:2px 6px; border-radius:4px;">${escapeHtml(p.sku?.toUpperCase() || 'SKU')}</span>
+                    ${isAc ? '<span style="font-size:9px; font-weight:700; background:rgba(184,134,47,0.15); color:var(--executive-gold); padding:1px 4px; border-radius:4px; font-family:monospace;">AC</span>' : ''}
+                  </div>
+                  <div style="font-size:13px; font-weight:700; margin-top:4px; color:var(--primary-ink);">${escapeHtml(p.name || p.sku)}</div>
+                </div>
+                <span class="kpi-badge green" style="font-size:11px;">Stock: ${p.stock ?? 50}</span>
+              </div>
+              <div style="font-size:11px; color:var(--meta-gray); margin-top:6px; line-height:1.4;">
+                Category: <strong>${escapeHtml(p.category || 'General')}</strong> • Weight: <strong>${p.weight || 0.5} kg</strong>${p.price ? ` • Price: <strong>₹${Number(p.price).toLocaleString()}</strong>` : ' • Price: <strong>₹1,499</strong>'} • Box: <strong>${box}</strong>
+              </div>
+              ${isAdmin ? `
+                <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:10px; padding-top:8px; border-top:1px solid var(--hairline-border);">
+                  <button class="btn-card-edit-product" data-product-idx="${idx}" style="background:var(--surface-container); border:1px solid var(--hairline-border); color:var(--executive-gold); font-size:11px; font-weight:700; padding:5px 12px; border-radius:6px; cursor:pointer;">
+                    ✏️ Edit
+                  </button>
+                  <button class="btn-card-delete-product" data-product-idx="${idx}" style="background:rgba(239,68,68,0.1); border:1px solid rgba(239,68,68,0.2); color:#EF4444; font-size:11px; font-weight:700; padding:5px 12px; border-radius:6px; cursor:pointer;">
+                    🗑️ Delete
+                  </button>
+                </div>
+              ` : ''}
+            </div>
+          `;
+        }).join('')}
+      </div>
+    `;
+
+    openSubmoduleSheet('Products & Catalog Registry', html);
+
+    // Search input listener
+    const searchInput = document.getElementById('pwa-catalog-search-input');
+    if (searchInput) {
+      searchInput.addEventListener('input', (e) => {
+        renderProductsCatalogSubmodule(e.target.value);
+      });
+    }
+
+    if (isAdmin) {
+      // Add Product Button
+      document.getElementById('btn-pwa-add-product')?.addEventListener('click', () => {
+        showProductFormModal();
+      });
+
+      // Edit Product Buttons
+      document.querySelectorAll('.btn-card-edit-product').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const idx = Number(btn.getAttribute('data-product-idx'));
+          const p = filtered[idx];
+          if (p) showProductFormModal(p);
+        });
+      });
+
+      // Delete Product Buttons
+      document.querySelectorAll('.btn-card-delete-product').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const idx = Number(btn.getAttribute('data-product-idx'));
+          const p = filtered[idx];
+          if (p) deleteCatalogProduct(p);
+        });
+      });
+    }
+  }
+
   // --- Register New Order Modal & AI Smart Parser (Matches Desktop & Android App) ---
   function openAddOrderSheet() {
     haptic('light');
@@ -1742,31 +2195,14 @@
       });
     }
 
-    // 2. Populate Pick from Catalog Dropdown
-    const catalogSelect = document.getElementById('new-order-catalog-picker');
-    if (catalogSelect) {
-      catalogSelect.innerHTML = '<option value="">Choose item...</option>';
-      const prods = Array.isArray(state.products) && state.products.length > 0 ? state.products : [];
-      prods.forEach(p => {
-        const opt = document.createElement('option');
-        opt.value = p.name || p.sku;
-        opt.textContent = `${p.name || p.sku} - ₹${p.price || 1499}`;
-        opt.setAttribute('data-price', p.price || 1499);
-        opt.setAttribute('data-weight', p.weight || 0.5);
-        catalogSelect.appendChild(opt);
-      });
-
-      catalogSelect.onchange = () => {
-        const selectedOpt = catalogSelect.options[catalogSelect.selectedIndex];
-        if (selectedOpt && selectedOpt.value) {
-          const itemInput = document.getElementById('new-order-item-name');
-          const amountInput = document.getElementById('new-order-amount');
-          const weightInput = document.getElementById('new-order-weight');
-          if (itemInput) itemInput.value = selectedOpt.value;
-          if (amountInput) amountInput.value = selectedOpt.getAttribute('data-price') || '1499';
-          if (weightInput) weightInput.value = selectedOpt.getAttribute('data-weight') || '0.5';
-          haptic('light');
-        }
+    // 2. Populate Pick from Catalog Dropdown & Quick Catalog Management
+    populateOrderCatalogPicker();
+    const quickCatBtn = document.getElementById('btn-quick-manage-catalog');
+    if (quickCatBtn) {
+      quickCatBtn.onclick = (e) => {
+        e.preventDefault();
+        haptic('light');
+        renderProductsCatalogSubmodule();
       };
     }
 
@@ -2537,216 +2973,6 @@
   function setupMoreModules() {
 
     // 2. Products & Catalog (Real Data from backend with Admin Edit/Delete)
-    function renderProductsCatalogSubmodule() {
-      const isAdmin = !state.user || state.user.role === 'admin';
-      const prodList = state.products.length > 0 ? state.products : [
-        { id: "p-drn", sku: "drn", name: "Drone Action Camera", weight: 0.8, stock: 500, category: "Drone Action Cameras", price: 14999 },
-        { id: "p-wg", sku: "wg", name: "Wide Gimbal Camera", weight: 2.5, stock: 500, category: "Drone Action Cameras", price: 18999 },
-        { id: "p-ac", sku: "ac", name: "Action Cam Pro", weight: 0.5, stock: 500, category: "Drone Action Cameras", price: 9999 },
-        { id: "p-m22", sku: "m22", name: "GS M22 Quad", weight: 0.8, stock: 500, category: "Drone Action Cameras", price: 12999 }
-      ];
-
-      const html = `
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
-          <div style="font-size:12px; color:var(--meta-gray);">Active SKUs in warehouse registry: ${prodList.length}</div>
-          ${isAdmin ? `
-            <button id="btn-pwa-add-product" class="btn-gold-primary" style="padding:6px 12px; font-size:11px; border-radius:8px; height:auto; width:auto;">
-              <span>+ Add Product</span>
-            </button>
-          ` : ''}
-        </div>
-        <div id="pwa-products-container" style="display: flex; flex-direction: column; gap: 10px;">
-          ${prodList.map((p, idx) => {
-            const isAc = (p.sku || '').toLowerCase().trim() === 'ac' || (p.name || '').toLowerCase().trim() === 'ac';
-            return `
-              <div class="kpi-card" style="min-height: auto; border: 1px solid var(--hairline-border); padding: 12px; border-radius: 12px; background: var(--canvas);">
-                <div style="display:flex; justify-content:space-between; align-items:flex-start;">
-                  <div>
-                    <div style="display:flex; align-items:center; gap:6px;">
-                      <span class="font-mono" style="font-weight:700; font-size:14px; color:var(--primary-ink);">${escapeHtml(p.sku?.toUpperCase() || 'SKU')}</span>
-                      ${isAc ? '<span style="font-size:9px; font-weight:700; background:rgba(184,134,47,0.15); color:var(--executive-gold); padding:1px 4px; border-radius:4px; font-family:monospace;">AC</span>' : ''}
-                    </div>
-                    <div style="font-size:13px; font-weight:600; margin-top:2px; color:var(--primary-ink);">${escapeHtml(p.name || p.sku)}</div>
-                  </div>
-                  <span class="kpi-badge green" style="font-size:11px;">Stock: ${p.stock ?? 500}</span>
-                </div>
-                <div style="font-size:11px; color:var(--meta-gray); margin-top:4px;">
-                  Category: ${escapeHtml(p.category || 'Drone Action Cameras')} • Weight: <strong>${p.weight || 0.8} kg</strong>${p.price ? ` • Price: <strong>₹${Number(p.price).toLocaleString()}</strong>` : ''}
-                </div>
-                ${isAdmin ? `
-                  <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:10px; padding-top:8px; border-top:1px solid var(--hairline-border);">
-                    <button class="btn-card-edit-product" data-product-idx="${idx}" style="background:var(--surface-container); border:1px solid var(--hairline-border); color:var(--executive-gold); font-size:11px; font-weight:700; padding:5px 12px; border-radius:6px; cursor:pointer;">
-                      ✏️ Edit
-                    </button>
-                    <button class="btn-card-delete-product" data-product-idx="${idx}" style="background:rgba(239,68,68,0.1); border:1px solid rgba(239,68,68,0.2); color:#EF4444; font-size:11px; font-weight:700; padding:5px 12px; border-radius:6px; cursor:pointer;">
-                      🗑️ Delete
-                    </button>
-                  </div>
-                ` : ''}
-              </div>
-            `;
-          }).join('')}
-        </div>
-      `;
-
-      openSubmoduleSheet('Products & Catalog Registry', html);
-
-      if (isAdmin) {
-        // Add Product Button
-        document.getElementById('btn-pwa-add-product')?.addEventListener('click', () => {
-          showProductFormModal();
-        });
-
-        // Edit Product Buttons
-        document.querySelectorAll('.btn-card-edit-product').forEach(btn => {
-          btn.addEventListener('click', () => {
-            const idx = Number(btn.getAttribute('data-product-idx'));
-            const p = prodList[idx];
-            if (p) showProductFormModal(p);
-          });
-        });
-
-        // Delete Product Buttons
-        document.querySelectorAll('.btn-card-delete-product').forEach(btn => {
-          btn.addEventListener('click', async () => {
-            const idx = Number(btn.getAttribute('data-product-idx'));
-            const p = prodList[idx];
-            if (!p) return;
-
-            if (confirm(`Are you sure you want to permanently delete "${p.name || p.sku}" from the catalog?`)) {
-              haptic('medium');
-              showToast(`Deleting ${p.name || p.sku}...`, 'info');
-              const targetId = p.id || p.sku;
-              state.products = state.products.filter(item => (item.id !== p.id && item.sku !== p.sku));
-              localStorage.setItem(STORAGE_KEY_PRODUCTS, JSON.stringify(state.products));
-
-              try {
-                if (window.FirebaseService && typeof window.FirebaseService.deleteProduct === 'function') {
-                  window.FirebaseService.deleteProduct(targetId).catch(err => console.warn('[Firebase] deleteProduct warning:', err));
-                }
-                await apiFetch(`/api/products/${encodeURIComponent(targetId)}`, {
-                  method: 'DELETE',
-                  headers: { 'x-user-role': 'admin' }
-                });
-                showToast(`Product "${p.name || p.sku}" deleted successfully.`, 'success');
-              } catch (err) {
-                console.warn('Backend delete error:', err);
-              }
-              renderProductsCatalogSubmodule();
-            }
-          });
-        });
-      }
-    }
-
-    function showProductFormModal(existing) {
-      const isEdit = !!existing;
-      const title = isEdit ? 'Edit Catalog Product' : 'Register New Product';
-      const formHtml = `
-        <div style="display:flex; flex-direction:column; gap:12px;">
-          <div style="font-size:12px; color:var(--meta-gray);">${isEdit ? `Editing SKU: ${existing.sku}` : 'Add a new item to the warehouse stock registry'}</div>
-          
-          <div>
-            <label style="font-size:11px; font-weight:700; color:var(--primary-ink); display:block; margin-bottom:4px;">Product Name *</label>
-            <input type="text" id="pwa-prod-name" value="${escapeHtml(existing?.name || '')}" placeholder="e.g., Drone 4K Action Camera" style="width:100%; padding:8px 10px; border-radius:8px; border:1px solid var(--hairline-border); font-size:13px; box-sizing:border-box;" />
-          </div>
-
-          <div>
-            <label style="font-size:11px; font-weight:700; color:var(--primary-ink); display:block; margin-bottom:4px;">SKU Code *</label>
-            <input type="text" id="pwa-prod-sku" value="${escapeHtml(existing?.sku || '')}" placeholder="e.g., ac, DRN-4K" style="width:100%; padding:8px 10px; border-radius:8px; border:1px solid var(--hairline-border); font-size:13px; font-family:monospace; box-sizing:border-box;" />
-          </div>
-
-          <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
-            <div>
-              <label style="font-size:11px; font-weight:700; color:var(--primary-ink); display:block; margin-bottom:4px;">Category</label>
-              <input type="text" id="pwa-prod-cat" value="${escapeHtml(existing?.category || 'Drone Action Cameras')}" placeholder="Category" style="width:100%; padding:8px 10px; border-radius:8px; border:1px solid var(--hairline-border); font-size:13px; box-sizing:border-box;" />
-            </div>
-            <div>
-              <label style="font-size:11px; font-weight:700; color:var(--primary-ink); display:block; margin-bottom:4px;">Price (₹)</label>
-              <input type="number" id="pwa-prod-price" value="${existing?.price || 0}" placeholder="0" style="width:100%; padding:8px 10px; border-radius:8px; border:1px solid var(--hairline-border); font-size:13px; box-sizing:border-box;" />
-            </div>
-          </div>
-
-          <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
-            <div>
-              <label style="font-size:11px; font-weight:700; color:var(--primary-ink); display:block; margin-bottom:4px;">Weight (kg) *</label>
-              <input type="number" step="0.01" id="pwa-prod-weight" value="${existing?.weight || 0.5}" placeholder="0.5" style="width:100%; padding:8px 10px; border-radius:8px; border:1px solid var(--hairline-border); font-size:13px; box-sizing:border-box;" />
-            </div>
-            <div>
-              <label style="font-size:11px; font-weight:700; color:var(--primary-ink); display:block; margin-bottom:4px;">Warehouse Stock</label>
-              <input type="number" id="pwa-prod-stock" value="${existing?.stock || 50}" placeholder="50" style="width:100%; padding:8px 10px; border-radius:8px; border:1px solid var(--hairline-border); font-size:13px; box-sizing:border-box;" />
-            </div>
-          </div>
-
-          <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:16px;">
-            <button id="btn-cancel-prod-form" class="btn-card-outline" style="padding:8px 14px; font-size:12px; font-weight:700;">Cancel</button>
-            <button id="btn-save-prod-form" class="btn-gold-primary" style="padding:8px 16px; font-size:12px; font-weight:700; border-radius:8px;">
-              <span>${isEdit ? 'Save Changes' : 'Register Product'}</span>
-            </button>
-          </div>
-        </div>
-      `;
-
-      openSubmoduleSheet(title, formHtml);
-
-      document.getElementById('btn-cancel-prod-form')?.addEventListener('click', () => {
-        renderProductsCatalogSubmodule();
-      });
-
-      document.getElementById('btn-save-prod-form')?.addEventListener('click', async () => {
-        const name = (document.getElementById('pwa-prod-name')?.value || '').trim();
-        const sku = (document.getElementById('pwa-prod-sku')?.value || '').trim();
-        const category = (document.getElementById('pwa-prod-cat')?.value || 'Drone Action Cameras').trim();
-        const price = Number(document.getElementById('pwa-prod-price')?.value) || 0;
-        const weight = Number(document.getElementById('pwa-prod-weight')?.value) || 0.5;
-        const stock = Number(document.getElementById('pwa-prod-stock')?.value) || 50;
-
-        if (!name || !sku) {
-          alert('Product name and SKU code are required.');
-          return;
-        }
-
-        haptic('medium');
-        showToast(isEdit ? 'Updating product...' : 'Adding product...', 'info');
-
-        const productPayload = {
-          id: existing?.id || `p-${Date.now()}-${Math.floor(Math.random() * 100000)}`,
-          name,
-          sku,
-          category,
-          price,
-          weight,
-          stock
-        };
-
-        if (isEdit) {
-          state.products = state.products.map(p => (p.id === existing.id || p.sku === existing.sku) ? productPayload : p);
-        } else {
-          state.products = [productPayload, ...state.products];
-        }
-        localStorage.setItem(STORAGE_KEY_PRODUCTS, JSON.stringify(state.products));
-
-        try {
-          if (window.FirebaseService && typeof window.FirebaseService.saveProduct === 'function') {
-            window.FirebaseService.saveProduct(productPayload).catch(err => console.warn('[Firebase] saveProduct warning:', err));
-          }
-          await apiFetch('/api/products', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'x-user-role': 'admin'
-            },
-            body: JSON.stringify(productPayload)
-          });
-          showToast(`Product "${name}" saved successfully.`, 'success');
-        } catch (err) {
-          console.warn('Backend save error:', err);
-        }
-
-        renderProductsCatalogSubmodule();
-      });
-    }
-
     document.getElementById('menu-products')?.addEventListener('click', () => {
       renderProductsCatalogSubmodule();
     });
@@ -3295,6 +3521,15 @@
               console.log(`[PWA Firestore] Live Snapshot: ${liveProducts.length} products received`);
               state.products = liveProducts;
               try { localStorage.setItem(STORAGE_KEY_PRODUCTS, JSON.stringify(liveProducts)); } catch (_) {}
+
+              // Refresh picker in Add Order sheet if active
+              const addSheet = document.getElementById('sheet-add-order');
+              if (addSheet && addSheet.classList.contains('active')) {
+                const picker = document.getElementById('new-order-catalog-picker');
+                const currVal = picker ? picker.value : '';
+                populateOrderCatalogPicker(currVal);
+              }
+
               const prodSub = document.getElementById('submodule-sheet');
               if (prodSub && prodSub.classList.contains('active')) {
                 const title = document.getElementById('submodule-title');
