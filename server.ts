@@ -4869,10 +4869,11 @@ app.post('/api/shiprocket/order/priority-book', async (req, res) => {
   const requestedLocationName = (pickupLocationName || pickupAddress?.name || '').trim();
   const existingPickup = (orderToBook.pickupLocation || '').trim();
   const isChangingPickup = Boolean(requestedLocationName && existingPickup && requestedLocationName.toLowerCase() !== existingPickup.toLowerCase());
+  const isBookedOnNonDappers = existingPickup && !existingPickup.toLowerCase().includes('dapper');
   const isSimulatedShipment = String(orderToBook.shipmentId || '').startsWith('sim_') || 
                              String(orderToBook.shiprocketOrderId || '').startsWith('sim_') ||
                              String(orderToBook.awbCode || '').startsWith('AWB');
-  const shouldForceRebook = Boolean(forceRebook) || isChangingPickup || (isLiveConfigured() && isSimulatedShipment);
+  const shouldForceRebook = Boolean(forceRebook) || isChangingPickup || isBookedOnNonDappers || (isLiveConfigured() && isSimulatedShipment);
 
   // Existing shipment guard: if the shipment is already booked and NOT changing pickup address or rebooking, retrieve its existing label
   if (orderToBook.status === 'booked' && (orderToBook.shipmentId || orderToBook.shiprocketOrderId) && !shouldForceRebook) {
@@ -4919,21 +4920,12 @@ app.post('/api/shiprocket/order/priority-book', async (req, res) => {
 
   try {
     let couriersList = [];
-    // In priority courier booking, the shipments should book on dappers pickup address: default is dapperss (Chennai 600002)
-    let targetLocationName = (requestedLocationName || orderToBook.pickupLocation || '').trim();
-    let targetPostcode = pickupPostcode || pickupAddress?.pincode;
-
-    if (!targetLocationName || 
-        targetLocationName.toLowerCase().includes('dapper') || 
-        targetLocationName.toLowerCase().includes('chennai') || 
-        targetLocationName.toLowerCase().includes('simulated') ||
-        !requestedLocationName) {
-      targetLocationName = 'dapperss';
-      if (!targetPostcode) {
-        targetPostcode = '600002';
-      }
-    }
-    const allowDefault = true;
+    // Priority Booking Requirement: ALL shipments booked through Priority Book MUST use the configured
+    // Dappers pickup address (dapperss, Chennai 600002) by default.
+    // Never use a previously selected warehouse (e.g. Ashok og / Mumbai) or another location as default.
+    const targetLocationName = 'dapperss';
+    const targetPostcode = '600002';
+    const allowDefault = false;
 
 
     // 1. Resolve and Validate Pickup Address

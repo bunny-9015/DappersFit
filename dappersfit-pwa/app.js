@@ -1640,8 +1640,8 @@
     showToast(`Booking Priority Air for ${order.orderNumber}...`, 'info');
 
     try {
-      const pName = (order.pickupLocation && !order.pickupLocation.toLowerCase().includes('simulated')) ? order.pickupLocation : 'dapperss';
-      const pPin = (order.pickupLocation && !order.pickupLocation.toLowerCase().includes('simulated')) ? (order.pickupAddress?.pincode || '600002') : '600002';
+      const pName = 'dapperss';
+      const pPin = '600002';
 
       const res = await apiFetch('/api/shiprocket/order/priority-book', {
         method: 'POST',
