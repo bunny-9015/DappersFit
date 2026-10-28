@@ -1428,6 +1428,58 @@
     showToast(`Exported ${state.orders.length} orders to CSV`, 'success');
   }
 
+  // --- Seamless Automatic PDF Label Download (No Chrome Popup / Permission Prompts) ---
+  async function triggerSeamlessLabelDownload(url, filename) {
+    if (!url) return;
+    try {
+      let fullUrl = url;
+      if (fullUrl.startsWith('/')) {
+        const apiBase = await resolveApiBase();
+        fullUrl = `${apiBase}${fullUrl}`;
+      }
+
+      // 1. Fetch PDF as Blob to create a local, same-origin blob: URL.
+      // Chrome allows same-origin blob downloads silently without asking for pop-up or auto-download permissions.
+      const res = await fetch(fullUrl, { method: 'GET', credentials: 'omit' });
+      if (res.ok) {
+        const blob = await res.blob();
+        const blobUrl = window.URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.style.display = 'none';
+        link.href = blobUrl;
+        link.download = filename || 'Dappersfit-Shipping-Label.pdf';
+        // DO NOT set target="_blank" - prevents Chrome popup blocker / permission dialog
+        document.body.appendChild(link);
+        link.click();
+        setTimeout(() => {
+          try { document.body.removeChild(link); } catch (e) {}
+          window.URL.revokeObjectURL(blobUrl);
+        }, 1500);
+        return;
+      }
+    } catch (fetchErr) {
+      console.warn('[Seamless Label Download] Fetch failed, falling back to silent iframe:', fetchErr);
+    }
+
+    // 2. Fallback: Silent invisible iframe for browsers blocking direct fetch
+    try {
+      let fullUrl = url;
+      if (fullUrl.startsWith('/')) {
+        const apiBase = await resolveApiBase();
+        fullUrl = `${apiBase}${fullUrl}`;
+      }
+      const iframe = document.createElement('iframe');
+      iframe.style.display = 'none';
+      iframe.src = fullUrl;
+      document.body.appendChild(iframe);
+      setTimeout(() => {
+        try { document.body.removeChild(iframe); } catch (e) {}
+      }, 10000);
+    } catch (e) {
+      console.error('[Seamless Label Download] Iframe download fallback failed:', e);
+    }
+  }
+
   // --- High-Fidelity Shipping Label Modal (Parity with React and Mobile App) ---
   function showShippingLabelModal(order) {
     if (!order) return;
@@ -1453,10 +1505,10 @@
             <span class="material-symbols-outlined" style="font-size: 16px; color: #10B981;">picture_as_pdf</span>
             <span style="font-weight: 700; color: var(--primary-ink);">Official Courier Shipping Label PDF</span>
           </div>
-          <a href="${labelUrl}" target="_blank" download="Dappersfit-Label-${orderNo}.pdf" class="btn-card-secondary" style="height: 28px; padding: 0 10px; font-size: 11px; text-decoration: none; display: flex; align-items: center; gap: 4px;">
-            <span class="material-symbols-outlined" style="font-size: 14px;">open_in_new</span>
-            <span>Open PDF</span>
-          </a>
+          <button type="button" id="btn-modal-open-pdf" class="btn-card-secondary" style="height: 28px; padding: 0 10px; font-size: 11px; display: flex; align-items: center; gap: 4px; cursor: pointer;">
+            <span class="material-symbols-outlined" style="font-size: 14px;">download</span>
+            <span>Download PDF</span>
+          </button>
         </div>
       </div>
     ` : `
@@ -1515,10 +1567,10 @@
 
         <div style="display: flex; gap: 8px; margin-top: 4px;">
           ${labelUrl ? `
-            <a href="${labelUrl}" target="_blank" download="Dappersfit-Label-${orderNo}.pdf" class="btn-gold-primary" style="flex: 1; text-decoration: none; display: flex; align-items: center; justify-content: center; gap: 6px; padding: 10px;">
+            <button type="button" id="btn-modal-download-pdf" class="btn-gold-primary" style="flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px; padding: 10px; cursor: pointer;">
               <span class="material-symbols-outlined">download</span>
               <span>Download PDF Label</span>
-            </a>
+            </button>
           ` : `
             <button type="button" id="btn-label-direct-action" class="btn-gold-primary" style="flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px; padding: 10px;">
               <span class="material-symbols-outlined">download</span>
@@ -1532,6 +1584,13 @@
         </div>
       </div>
     `);
+
+    document.getElementById('btn-modal-open-pdf')?.addEventListener('click', () => {
+      triggerSeamlessLabelDownload(labelUrl, `Dappersfit-Label-${orderNo}.pdf`);
+    });
+    document.getElementById('btn-modal-download-pdf')?.addEventListener('click', () => {
+      triggerSeamlessLabelDownload(labelUrl, `Dappersfit-Label-${orderNo}.pdf`);
+    });
 
     // Fetch live label if not present
     document.getElementById('btn-fetch-live-label')?.addEventListener('click', async () => {
@@ -1589,26 +1648,9 @@
         } catch (_) {}
       }
 
-      // Auto-trigger shipping label PDF download if available
+      // Auto-trigger seamless shipping label PDF download without Chrome popup/permission prompts
       if (order.labelUrl) {
-        try {
-          const apiBase = await resolveApiBase();
-          let dlUrl = order.labelUrl;
-          if (dlUrl.startsWith('/')) {
-            dlUrl = `${apiBase}${dlUrl}`;
-          }
-          const downloadLink = document.createElement('a');
-          downloadLink.style.display = 'none';
-          downloadLink.href = dlUrl;
-          downloadLink.download = `Dappersfit-Label-${order.orderNumber || order.id}.pdf`;
-          downloadLink.target = '_blank';
-          downloadLink.rel = 'noopener noreferrer';
-          document.body.appendChild(downloadLink);
-          downloadLink.click();
-          setTimeout(() => downloadLink.remove(), 1500);
-        } catch (dlErr) {
-          console.warn('Auto download error on existing booking:', dlErr);
-        }
+        triggerSeamlessLabelDownload(order.labelUrl, `Dappersfit-Label-${order.orderNumber || order.id}.pdf`);
       }
 
       openOrderDetailSheet(order.id);
@@ -1666,26 +1708,9 @@
           order.labelUrl = data.labelUrl || order.labelUrl;
           if (data.order) Object.assign(order, data.order);
 
-          // Auto-trigger shipping label PDF download
+          // Auto-trigger seamless shipping label PDF download without Chrome popup/permission prompts
           if (order.labelUrl) {
-            try {
-              let labelDownloadUrl = order.labelUrl;
-              if (labelDownloadUrl.startsWith('/')) {
-                const apiBase = await resolveApiBase();
-                labelDownloadUrl = `${apiBase}${labelDownloadUrl}`;
-              }
-              const downloadLink = document.createElement('a');
-              downloadLink.style.display = 'none';
-              downloadLink.href = labelDownloadUrl;
-              downloadLink.download = `Dappersfit-Label-${order.orderNumber || order.id}.pdf`;
-              downloadLink.target = '_blank';
-              downloadLink.rel = 'noopener noreferrer';
-              document.body.appendChild(downloadLink);
-              downloadLink.click();
-              setTimeout(() => downloadLink.remove(), 1500);
-            } catch (dlErr) {
-              console.warn('Auto download error:', dlErr);
-            }
+            triggerSeamlessLabelDownload(order.labelUrl, `Dappersfit-Label-${order.orderNumber || order.id}.pdf`);
           }
         } else {
           // Graceful fallback if simulated Shiprocket
