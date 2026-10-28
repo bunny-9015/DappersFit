@@ -21,6 +21,10 @@ export interface OrderBookingResponse {
   error?: string;
   labelUrl?: string;
   labelGenerated?: boolean;
+  trackingUrl?: string;
+  pickupScheduledDate?: string;
+  pickupTokenNumber?: string;
+  pickupStatus?: string;
 }
 
 export interface DocumentResponse {
@@ -111,33 +115,32 @@ export class ShiprocketService {
   }
 
   /**
-   * Check Courier availability and calculate delivery rates for a specific PIN Code & weight
+   * Check courier serviceability and live rates for a delivery pincode
    */
   static async checkServiceability(
-    deliveryPostcode: string,
+    deliveryPincode: string,
     weight: number,
-    cod: boolean = false,
-    pickupPostcode?: string
+    cod: boolean = true,
+    pickupPincode: string = '411037'
   ): Promise<ServiceabilityResponse> {
     try {
       const response = await fetch(`${this.apiBase}/serviceability`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          delivery_postcode: deliveryPostcode,
+          pickup_postcode: pickupPincode,
+          delivery_postcode: deliveryPincode,
           weight,
-          cod: cod ? 1 : 0,
-          pickup_postcode: pickupPostcode
+          cod: cod ? 1 : 0
         })
       });
 
       if (!response.ok) {
-        let errMsg = `Serviceability check failed with status: ${response.status}`;
-        try {
-          const errData = await response.json();
-          errMsg = errData.error || errData.message || errMsg;
-        } catch {}
-        throw new Error(errMsg);
+        return {
+          success: false,
+          couriers: [],
+          error: `Serviceability request failed with status: ${response.status}`
+        };
       }
 
       const data = await response.json();
@@ -146,7 +149,6 @@ export class ShiprocketService {
         couriers: data.couriers || []
       };
     } catch (err: any) {
-      console.error('Shiprocket serviceability error:', err);
       return {
         success: false,
         couriers: [],
@@ -156,7 +158,7 @@ export class ShiprocketService {
   }
 
   /**
-   * Book an order, creating the ad-hoc order on Shiprocket and assigning an AWB in one transaction
+   * Book an order with the selected courier partner
    */
   static async bookOrder(
     orderId: string,
@@ -178,8 +180,7 @@ export class ShiprocketService {
           deliveryAddress,
           pickupLocationName,
           pickupPostcode,
-          pickupAddress,
-          forceRebook: true
+          pickupAddress
         })
       });
 
@@ -189,7 +190,10 @@ export class ShiprocketService {
           const errData = await response.json();
           errMsg = errData.error || errData.message || errMsg;
         } catch {}
-        throw new Error(errMsg);
+        return {
+          success: false,
+          error: errMsg
+        };
       }
 
       const data = await response.json();
@@ -200,15 +204,21 @@ export class ShiprocketService {
           shipmentId: data.shipmentId,
           awbCode: data.awbCode,
           courierName: data.courierName,
-          labelUrl: data.labelUrl,
-          labelGenerated: data.labelGenerated ?? !!data.labelUrl,
-          order: data.order
+          order: data.order,
+          labelUrl: data.labelUrl || data.order?.labelUrl,
+          labelGenerated: data.labelGenerated ?? !!(data.labelUrl || data.order?.labelUrl),
+          trackingUrl: data.trackingUrl || data.order?.trackingUrl,
+          pickupScheduledDate: data.pickupScheduledDate || data.order?.pickupScheduledDate,
+          pickupTokenNumber: data.pickupTokenNumber || data.order?.pickupTokenNumber,
+          pickupStatus: data.pickupStatus || data.order?.pickupStatus
         };
       } else {
-        throw new Error(data.error || 'Failed to complete order booking.');
+        return {
+          success: false,
+          error: data.error || 'Failed to complete order booking.'
+        };
       }
     } catch (err: any) {
-      console.error('Shiprocket order booking error:', err);
       return {
         success: false,
         error: err.message || 'Order booking failed.'
