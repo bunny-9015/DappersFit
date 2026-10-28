@@ -350,12 +350,12 @@ export const EXCEPTION_ORDER_TIERS: CourierTierConfig[] = [
  * - Tracks skipped tiers and audit logs.
  */
 export function selectPriorityCourierPlan(
-  order: any, 
+  order: any,
   serviceableCouriersList: ServiceableCourier[]
 ): PrioritySelectionResult {
   const orderType: OrderType = detectOrderType(order);
   const tierConfig = orderType === 'Exception' ? EXCEPTION_ORDER_TIERS : STANDARD_ORDER_TIERS;
-  
+
   const candidates: PriorityCourierCandidate[] = [];
   const skippedTiers: SkippedTierLog[] = [];
   const auditLogs: string[] = [];
@@ -441,7 +441,7 @@ export function selectPriorityCourierPlan(
  * Backward-compatible helper for server.ts / existing endpoints
  */
 export function selectCourierCandidates(
-  orderToBook: any, 
+  orderToBook: any,
   serviceableCouriersList: ServiceableCourier[]
 ): PriorityCourierCandidate[] {
   return selectPriorityCourierPlan(orderToBook, serviceableCouriersList).candidates;
@@ -465,7 +465,7 @@ export interface PickupAddressVerificationResult {
  * with a clear error instead of silently falling back to another warehouse.
  */
 export function validateDappersfitPickupAddress(
-  registeredLocations: Array<{ name: string; pincode?: string; isPrimary?: boolean; status?: number; [k: string]: any }>,
+  registeredLocations: Array<{ name: string; pincode?: string; isPrimary?: boolean; status?: number;[k: string]: any }>,
   requestedLocation?: string
 ): PickupAddressVerificationResult {
   if (!registeredLocations || !Array.isArray(registeredLocations) || registeredLocations.length === 0) {
@@ -480,7 +480,7 @@ export function validateDappersfitPickupAddress(
   const dappersMatch = registeredLocations.find(r => {
     const n = String(r.name || r.pickup_location || '').toLowerCase().trim();
     const pin = String(r.pincode || r.pin_code || '').trim();
-    return n.includes('dapper') || (r.isPrimary && pin === '600002') || (r.is_primary_location === 1 && pin === '600002');
+    return n.includes('dappers') || (r.isPrimary && pin === '600002') || (r.is_primary_location === 1 && pin === '600002');
   });
 
   const reqClean = (requestedLocation || '').trim().toLowerCase();
@@ -564,14 +564,14 @@ export interface PriorityBookingExecutionResult {
 export async function executePriorityAwbAssignment(
   params: ExecutePriorityBookingParams
 ): Promise<PriorityBookingExecutionResult> {
-  const { 
-    order, 
-    shipmentId, 
-    candidates, 
-    skippedTiers = [], 
+  const {
+    order,
+    shipmentId,
+    candidates,
+    skippedTiers = [],
     pickupLocationConfirmed,
-    assignAwbFn, 
-    logger = console.log 
+    assignAwbFn,
+    logger = console.log
   } = params;
   const orderNumber = order?.orderNumber || order?.id || 'Unknown';
   const orderType: OrderType = detectOrderType(order);
