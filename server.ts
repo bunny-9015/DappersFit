@@ -275,13 +275,14 @@ let serverSettings = {
 // Registered fallback / simulation locations
 const SIMULATED_PICKUP_LOCATIONS = [
   {
-    name: 'Ashok og',
-    pincode: '400001',
-    address: 'Shop no.201 ground floor Sahara Market Mumbai S.s Musafir khana road',
-    city: 'Mumbai',
-    state: 'Maharashtra',
-    phone: '9561047759',
-    isLive: false
+    name: 'dapperss',
+    pincode: '600002',
+    address: 'No-7 athipattan street, opp to omanthur hospital, Chintadripet, Chennai',
+    city: 'Chennai',
+    state: 'Tamil Nadu',
+    phone: '9982760943',
+    isLive: true,
+    isPrimary: true
   },
   {
     name: 'Chennai Central Fulfillment Hub (Primary)',
@@ -290,6 +291,15 @@ const SIMULATED_PICKUP_LOCATIONS = [
     city: 'Chennai',
     state: 'Tamil Nadu',
     phone: '9982760943',
+    isLive: false
+  },
+  {
+    name: 'Ashok og',
+    pincode: '400001',
+    address: 'Shop no.201 ground floor Sahara Market Mumbai S.s Musafir khana road',
+    city: 'Mumbai',
+    state: 'Maharashtra',
+    phone: '9561047759',
     isLive: false
   },
   {
@@ -401,7 +411,7 @@ async function validateAndResolvePickupLocation(
       if (pinMatches.length === 1) {
         match = pinMatches[0];
       } else if (pinMatches.length > 1) {
-        match = pinMatches.find(r => r.name.toLowerCase().includes('ashok')) || pinMatches[0];
+        match = pinMatches.find(r => r.name.toLowerCase().includes('dapper')) || pinMatches[0];
       }
     }
 
@@ -423,7 +433,7 @@ async function validateAndResolvePickupLocation(
   if (reqPin) {
     const pinMatches = registered.filter(r => r.pincode === reqPin);
     if (pinMatches.length > 0) {
-      const match = pinMatches.find(r => r.name.toLowerCase().includes('ashok')) || pinMatches[0];
+      const match = pinMatches.find(r => r.name.toLowerCase().includes('dapper')) || pinMatches[0];
       console.log(`[Shiprocket Pickup Resolution] Matched requested PIN "${reqPin}" to registered location: "${match.name}" (${match.pincode})`);
       return { success: true, location: match };
     }
@@ -432,7 +442,7 @@ async function validateAndResolvePickupLocation(
   // If no location was requested, default to primary warehouse 'dapperss' (Chennai 600002)
   if (allowDefaultFallback) {
     const dappersDefault = registered.find(r => r.name.toLowerCase().includes('dappers') || r.isPrimary);
-    const defaultLoc = dappersDefault || registered.find(r => r.name.toLowerCase().includes('ashok')) || registered[0];
+    const defaultLoc = dappersDefault || registered.find(r => r.name.toLowerCase().includes('chennai')) || registered[0];
     console.log(`[Shiprocket Pickup Resolution] Using default warehouse: "${defaultLoc.name}" (${defaultLoc.pincode})`);
     return { success: true, location: defaultLoc };
   }
@@ -4243,7 +4253,7 @@ app.post('/api/shiprocket/order/book', async (req, res) => {
 
       let targetPickupName = (requestedPickupName || orderToBook.pickupLocation || '').trim();
       if (!targetPickupName || targetPickupName.toLowerCase().includes('simulated')) {
-        targetPickupName = 'Ashok og ';
+        targetPickupName = 'dapperss';
       }
 
       // Validate selected pickup address against registered Shiprocket locations with fallback
@@ -4612,9 +4622,9 @@ async function handleBookCourierRequest(req: any, res: any) {
           billing_customer_name: order.customerName.length >= 3 ? order.customerName : `${order.customerName} Customer`,
           billing_last_name: order.customerName.split(' ').slice(1).join(' ') || '',
           billing_address: (order.address?.address && order.address.address.length >= 10) ? order.address.address : `${order.address?.address || 'Main Road'} Suite 100`,
-          billing_city: order.address?.city || 'Mumbai',
-          billing_pincode: order.address?.pincode || '400001',
-          billing_state: order.address?.state || 'Maharashtra',
+          billing_city: order.address?.city || 'Chennai',
+          billing_pincode: order.address?.pincode || '600002',
+          billing_state: order.address?.state || 'Tamil Nadu',
           billing_country: 'India',
           billing_email: order.address?.email || 'customer@dappersfit.com',
           billing_phone: cleanPhoneNumber(order.address?.phone || '9876543210'),
