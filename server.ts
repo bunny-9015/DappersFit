@@ -20,7 +20,8 @@ import {
   selectPriorityCourierPlan, 
   selectCourierCandidates, 
   executePriorityAwbAssignment,
-  detectOrderType 
+  detectOrderType,
+  validateDappersfitPickupAddress 
 } from './src/utils/priorityCourierModule';
 
 setLogLevel('silent');
@@ -5097,6 +5098,7 @@ app.post('/api/shiprocket/order/priority-book', async (req, res) => {
           shipmentId,
           candidates: priorityCourierCandidates,
           skippedTiers: priorityPlan.skippedTiers,
+          pickupLocationConfirmed: resolvedPickupLocation.name,
           assignAwbFn: async (courierId) => {
             const awbPayload: any = { shipment_id: shipmentId };
             if (courierId) {

@@ -407,44 +407,9 @@ export function selectPriorityCourierPlan(
     }
   }
 
-  // Fallback for Exception orders: ensure surface-first before any air/express option
-  if (orderType === 'Exception') {
-    const remainingSurface = (serviceableCouriersList || []).filter(c => {
-      const idKey = String(c.courierId);
-      if (seenCourierIds.has(idKey)) return false;
-      const name = normalizeCourierName(c);
-      return name.includes('surface') || name.includes('ground');
-    }).sort((a, b) => Number(a.rate || 0) - Number(b.rate || 0));
-
-    for (const c of remainingSurface) {
-      seenCourierIds.add(String(c.courierId));
-      candidates.push({
-        ...c,
-        tierId: 'REMAINING_SURFACE_FALLBACK',
-        tierName: 'Other Surface/Ground Couriers (Exhaust Surface Before Air)',
-        tierRank: 50,
-        orderType,
-        isSurface: true
-      });
-    }
-
-    const remainingAir = (serviceableCouriersList || []).filter(c => {
-      const idKey = String(c.courierId);
-      return !seenCourierIds.has(idKey);
-    }).sort((a, b) => Number(a.rate || 0) - Number(b.rate || 0));
-
-    for (const c of remainingAir) {
-      seenCourierIds.add(String(c.courierId));
-      candidates.push({
-        ...c,
-        tierId: 'REMAINING_AIR_FALLBACK',
-        tierName: 'Air/Express Couriers (Attempted strictly after surface)',
-        tierRank: 60,
-        orderType,
-        isSurface: false
-      });
-    }
-  }
+  // Strict Rule 3.B: For Exception Orders, do not add air/express options unless explicitly configured and approved.
+  // Air/express couriers must never be attempted before surface tiers have been exhausted.
+  // If all configured surface tiers are exhausted, the booking falls directly to Shiprocket Auto-Assign.
 
   // Fallback for Standard orders if no tier matched
   if (candidates.length === 0 && serviceableCouriersList && serviceableCouriersList.length > 0) {
@@ -483,7 +448,85 @@ export function selectCourierCandidates(
 }
 
 // ---------------------------------------------------------------------------
-// 5. AWB ASSIGNMENT & FALLBACK EXECUTOR
+// 5. PICKUP ADDRESS VALIDATION & VERIFICATION (MANDATORY DAPPERSFIT ADDRESS)
+// ---------------------------------------------------------------------------
+
+export interface PickupAddressVerificationResult {
+  isValid: boolean;
+  locationName?: string;
+  pincode?: string;
+  isDappersfitDefault: boolean;
+  error?: string;
+}
+
+/**
+ * Validates that Priority Book uses the configured Dappersfit pickup address by default.
+ * If the Dappersfit pickup address is missing or invalid in the account, stops the booking process
+ * with a clear error instead of silently falling back to another warehouse.
+ */
+export function validateDappersfitPickupAddress(
+  registeredLocations: Array<{ name: string; pincode?: string; isPrimary?: boolean; status?: number; [k: string]: any }>,
+  requestedLocation?: string
+): PickupAddressVerificationResult {
+  if (!registeredLocations || !Array.isArray(registeredLocations) || registeredLocations.length === 0) {
+    return {
+      isValid: false,
+      isDappersfitDefault: true,
+      error: 'No active pickup warehouses registered in Shiprocket account. Priority booking stopped.'
+    };
+  }
+
+  // Find the configured Dappersfit warehouse (name matching 'dappers' / 'dapperss' or primary hub in 600002)
+  const dappersMatch = registeredLocations.find(r => {
+    const n = String(r.name || r.pickup_location || '').toLowerCase().trim();
+    const pin = String(r.pincode || r.pin_code || '').trim();
+    return n.includes('dapper') || (r.isPrimary && pin === '600002') || (r.is_primary_location === 1 && pin === '600002');
+  });
+
+  const reqClean = (requestedLocation || '').trim().toLowerCase();
+  const isDefaultDappersfit = !reqClean || reqClean === 'dapperss' || reqClean.includes('dapper') || reqClean.includes('chennai');
+
+  if (isDefaultDappersfit) {
+    if (!dappersMatch) {
+      return {
+        isValid: false,
+        isDappersfitDefault: true,
+        error: 'Configured Dappersfit pickup address ("dapperss") is missing or invalid in Shiprocket account. Priority booking stopped.'
+      };
+    }
+
+    return {
+      isValid: true,
+      locationName: dappersMatch.name || dappersMatch.pickup_location || 'dapperss',
+      pincode: dappersMatch.pincode || dappersMatch.pin_code || '600002',
+      isDappersfitDefault: true
+    };
+  }
+
+  // If a specific custom pickup location was passed, check if it exists in registered locations
+  const specificMatch = registeredLocations.find(r => {
+    const n = String(r.name || r.pickup_location || '').toLowerCase().trim();
+    return n === reqClean || n.includes(reqClean) || reqClean.includes(n);
+  });
+
+  if (!specificMatch) {
+    return {
+      isValid: false,
+      isDappersfitDefault: false,
+      error: `Requested pickup location "${requestedLocation}" is not registered in Shiprocket account. Priority booking stopped.`
+    };
+  }
+
+  return {
+    isValid: true,
+    locationName: specificMatch.name || specificMatch.pickup_location,
+    pincode: specificMatch.pincode || specificMatch.pin_code,
+    isDappersfitDefault: false
+  };
+}
+
+// ---------------------------------------------------------------------------
+// 6. AWB ASSIGNMENT & FALLBACK EXECUTOR
 // ---------------------------------------------------------------------------
 
 export interface ExecutePriorityBookingParams {
@@ -491,6 +534,7 @@ export interface ExecutePriorityBookingParams {
   shipmentId: string | number;
   candidates: PriorityCourierCandidate[];
   skippedTiers?: SkippedTierLog[];
+  pickupLocationConfirmed?: string;
   assignAwbFn: (courierId?: number | string) => Promise<AwbAssignmentResult>;
   logger?: (msg: string) => void;
 }
@@ -505,6 +549,7 @@ export interface PriorityBookingExecutionResult {
   orderType: OrderType;
   isAutoAssigned: boolean;
   rate?: number;
+  pickupLocationConfirmed?: string;
   skippedTiers: SkippedTierLog[];
   auditTrail: string[];
   lastError?: string;
@@ -519,7 +564,15 @@ export interface PriorityBookingExecutionResult {
 export async function executePriorityAwbAssignment(
   params: ExecutePriorityBookingParams
 ): Promise<PriorityBookingExecutionResult> {
-  const { order, shipmentId, candidates, skippedTiers = [], assignAwbFn, logger = console.log } = params;
+  const { 
+    order, 
+    shipmentId, 
+    candidates, 
+    skippedTiers = [], 
+    pickupLocationConfirmed,
+    assignAwbFn, 
+    logger = console.log 
+  } = params;
   const orderNumber = order?.orderNumber || order?.id || 'Unknown';
   const orderType: OrderType = detectOrderType(order);
   const auditTrail: string[] = [];
@@ -532,6 +585,12 @@ export async function executePriorityAwbAssignment(
   let bookedRate = 0;
   let isAutoAssigned = false;
   let lastError = '';
+
+  if (pickupLocationConfirmed) {
+    const pickupLog = `[Priority Booking Audit] Confirmed Dappersfit pickup address used for booking: "${pickupLocationConfirmed}".`;
+    logger(pickupLog);
+    auditTrail.push(pickupLog);
+  }
 
   logger(`[Priority Booking Execution] Starting AWB assignment for Order ${orderNumber} (Type: ${orderType}, Candidates: ${candidates.length}).`);
 
@@ -614,6 +673,7 @@ export async function executePriorityAwbAssignment(
       orderType,
       isAutoAssigned,
       rate: bookedRate,
+      pickupLocationConfirmed,
       skippedTiers,
       auditTrail
     };
@@ -623,6 +683,7 @@ export async function executePriorityAwbAssignment(
       lastError,
       orderType,
       isAutoAssigned: false,
+      pickupLocationConfirmed,
       skippedTiers,
       auditTrail
     };
