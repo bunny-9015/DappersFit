@@ -166,10 +166,11 @@
     const name = (courierName || '').toLowerCase();
     
     if (isException) {
-      // Exception: DAPPERS -> SURFACE_2KG_EXCEPTION (Delhivery Surface 2kg / Blue Dart 2kg) -> INDIA_POST
+      // Exception: DAPPERS -> BLUEDART_SURFACE_2KG -> DELHIVERY_SURFACE_2KG -> INDIA_POST
       if (name.includes('dapper')) return 1;
-      if (name.includes('surface') && (name.includes('2kg') || name.includes('2 kg') || name.includes('delhivery') || name.includes('bluedart') || name.includes('blue dart'))) return 2;
-      if (name.includes('india post') || name.includes('speed post')) return 3;
+      if ((name.includes('surface') || name.includes('ground')) && (name.includes('bluedart') || name.includes('blue dart'))) return 2;
+      if ((name.includes('surface') || name.includes('ground')) && (name.includes('delhivery') || name.includes('delievry') || name.includes('delivery'))) return 3;
+      if (name.includes('india post') || name.includes('speed post') || name.includes('business post')) return 4;
       return 100;
     }
 
@@ -1428,9 +1429,96 @@
     showToast(`Exported ${state.orders.length} orders to CSV`, 'success');
   }
 
-  // --- Seamless Automatic PDF Label Download (No Chrome Popup / Permission Prompts) ---
+  // --- Strict Shiprocket Label & Booking Validation Helpers ---
+  const activeBookingOrderIds = new Set();
+
+  function isOfficialShiprocketLabel(url) {
+    if (!url || typeof url !== 'string') return false;
+    if (url.includes('download-label-pdf')) return false;
+    return (
+      url.includes('/api/shiprocket/download-live-pdf') ||
+      url.includes('sr-core-cdn') ||
+      url.includes('shiprocket') ||
+      url.includes('amazonaws.com') ||
+      url.includes('kr-shipmultichannel')
+    );
+  }
+
+  function isGenuineShiprocketBooking(obj) {
+    if (!obj) return false;
+    const awb = String(obj.awbCode || '').trim();
+    const shipmentId = String(obj.shipmentId || '').trim();
+    const srOrderId = String(obj.shiprocketOrderId || '').trim();
+    if (!awb || !shipmentId) return false;
+    if (
+      awb.startsWith('789') ||
+      awb.startsWith('AWB') ||
+      shipmentId.startsWith('SHP-') ||
+      shipmentId.startsWith('SM-') ||
+      shipmentId.startsWith('sim_') ||
+      srOrderId.startsWith('SR-') ||
+      srOrderId.startsWith('sim_')
+    ) {
+      return false;
+    }
+    return true;
+  }
+
+  function getOrderBookingFingerprint(o) {
+    if (!o) return '';
+    const normStr = (s) => String(s || '').toLowerCase().trim().replace(/[^a-z0-9]/g, '');
+    const normDigits = (p) => String(p || '').replace(/\D/g, '');
+    const phone = normDigits(o.address?.phone || o.phone).slice(-10);
+    const pin = normDigits(o.address?.pincode || o.pincode);
+    const cust = normStr(o.customerName || o.address?.name);
+    const firstItem = Array.isArray(o.items) && o.items.length > 0 ? o.items[0] : null;
+    const prod = normStr(firstItem?.sku || firstItem?.name || o.productName || o.item);
+    const qty = Number(firstItem?.quantity || o.quantity || 1);
+    if (!phone || !pin) return '';
+    return `${cust}|${phone}|${pin}|${prod}|${qty}`;
+  }
+
+  function findDuplicateBookedInShiprocket(targetOrder) {
+    if (!targetOrder) return null;
+    const targetId = String(targetOrder.id || '').trim();
+    const targetOrderNo = String(targetOrder.orderNumber || '').trim().toLowerCase();
+    const targetFp = getOrderBookingFingerprint(targetOrder);
+
+    return state.orders.find(o => {
+      if (!o || o.status === 'cancelled' || o.status === 'failed') return false;
+      const oId = String(o.id || '').trim();
+      if (oId === targetId) return false;
+
+      const isAlreadyBookedOrInFlight =
+        activeBookingOrderIds.has(oId) ||
+        isGenuineShiprocketBooking(o) ||
+        (['booked', 'awb_assigned', 'shipped', 'delivered', 'processed'].includes(String(o.status || '').toLowerCase()) &&
+          Boolean(o.awbCode || o.shipmentId));
+
+      if (!isAlreadyBookedOrInFlight) return false;
+
+      const oOrderNo = String(o.orderNumber || '').trim().toLowerCase();
+      if (targetOrderNo && oOrderNo && targetOrderNo === oOrderNo) {
+        return true;
+      }
+
+      if (targetFp) {
+        const oFp = getOrderBookingFingerprint(o);
+        if (oFp && oFp === targetFp) {
+          return true;
+        }
+      }
+      return false;
+    }) || null;
+  }
+
+  // --- Seamless Automatic Official Shiprocket PDF Label Download ---
   async function triggerSeamlessLabelDownload(url, filename) {
-    if (!url) return;
+    if (!url || !isOfficialShiprocketLabel(url)) {
+      showToast('Only official Shiprocket labels can be downloaded.', 'error');
+      return false;
+    }
+    const safeFilename = filename || 'Shiprocket-Label.pdf';
     try {
       let fullUrl = url;
       if (fullUrl.startsWith('/')) {
@@ -1438,209 +1526,166 @@
         fullUrl = `${apiBase}${fullUrl}`;
       }
 
-      // 1. Fetch PDF as Blob to create a local, same-origin blob: URL.
-      // Chrome allows same-origin blob downloads silently without asking for pop-up or auto-download permissions.
+      // 1. Fetch official Shiprocket PDF as Blob to trigger automatic download on iOS Safari / PWA
       const res = await fetch(fullUrl, { method: 'GET', credentials: 'omit' });
       if (res.ok) {
-        const blob = await res.blob();
-        const blobUrl = window.URL.createObjectURL(blob);
+        const arrayBuf = await res.arrayBuffer();
+        const pdfBlob = new Blob([arrayBuf], { type: 'application/pdf' });
+        const blobUrl = window.URL.createObjectURL(pdfBlob);
         const link = document.createElement('a');
         link.style.display = 'none';
         link.href = blobUrl;
-        link.download = filename || 'Dappersfit-Shipping-Label.pdf';
-        // DO NOT set target="_blank" - prevents Chrome popup blocker / permission dialog
+        link.download = safeFilename;
         document.body.appendChild(link);
         link.click();
         setTimeout(() => {
           try { document.body.removeChild(link); } catch (e) {}
           window.URL.revokeObjectURL(blobUrl);
-        }, 1500);
-        return;
+        }, 60000);
+        return true;
       }
     } catch (fetchErr) {
-      console.warn('[Seamless Label Download] Fetch failed, falling back to silent iframe:', fetchErr);
+      console.warn('[Seamless Label Download] Fetch failed, falling back to direct anchor download:', fetchErr);
     }
 
-    // 2. Fallback: Silent invisible iframe for browsers blocking direct fetch
+    // 2. Fallback: Direct anchor download + silent iframe for official Shiprocket PDF URL
     try {
       let fullUrl = url;
       if (fullUrl.startsWith('/')) {
         const apiBase = await resolveApiBase();
         fullUrl = `${apiBase}${fullUrl}`;
       }
-      const iframe = document.createElement('iframe');
-      iframe.style.display = 'none';
-      iframe.src = fullUrl;
-      document.body.appendChild(iframe);
+      const link = document.createElement('a');
+      link.style.display = 'none';
+      link.href = fullUrl;
+      link.download = safeFilename;
+      document.body.appendChild(link);
+      link.click();
       setTimeout(() => {
-        try { document.body.removeChild(iframe); } catch (e) {}
-      }, 10000);
+        try { document.body.removeChild(link); } catch (e) {}
+      }, 5000);
+      return true;
     } catch (e) {
-      console.error('[Seamless Label Download] Iframe download fallback failed:', e);
+      console.error('[Seamless Label Download] Direct download fallback failed:', e);
+      return false;
     }
   }
 
-  // --- High-Fidelity Shipping Label Modal (Parity with React and Mobile App) ---
-  function showShippingLabelModal(order) {
+  // --- Official Shiprocket Label Modal (Strict Official Shiprocket Label Only) ---
+  async function showShippingLabelModal(order, autoDownload = false) {
     if (!order) return;
     haptic('medium');
 
-    const rawUrl = order.labelUrl || '';
+    if (!isGenuineShiprocketBooking(order)) {
+      showToast('Order is not booked in Shiprocket. Label unavailable.', 'error');
+      return;
+    }
+
+    // If official Shiprocket label URL is not cached on the order yet, fetch it from Shiprocket
+    if (!isOfficialShiprocketLabel(order.labelUrl)) {
+      try {
+        const lRes = await apiFetch('/api/shiprocket/label', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ shipmentId: order.shipmentId || order.shiprocketOrderId || order.id })
+        });
+        if (lRes.ok) {
+          const lData = await lRes.json();
+          if (lData && lData.success && isOfficialShiprocketLabel(lData.labelUrl)) {
+            order.labelUrl = lData.labelUrl;
+            try { localStorage.setItem(STORAGE_KEY_ORDERS, JSON.stringify(state.orders)); } catch (_) {}
+          }
+        }
+      } catch (_) {}
+    }
+
+    if (!isOfficialShiprocketLabel(order.labelUrl)) {
+      showToast('Official Shiprocket label is not available for this order.', 'error');
+      return;
+    }
+
+    const rawUrl = order.labelUrl;
     const apiBase = state.baseUrl || (typeof window !== 'undefined' ? window.location.origin : '');
     const labelUrl = (rawUrl && rawUrl.startsWith('/')) ? `${apiBase}${rawUrl}` : rawUrl;
-    const awb = order.awbCode || '7892401824';
-    const courier = order.courierName || 'Blue Dart Express (Air)';
+    const awb = order.awbCode;
+    const courier = order.courierName || 'Shiprocket Courier';
     const orderNo = order.orderNumber || order.id;
-    const destName = order.customerName || 'Customer';
-    const destAddr = (order.address?.address || '') + ', ' + (order.address?.city || '') + ' - ' + (order.address?.pincode || '');
-    const destPhone = order.address?.phone || '';
-    const codAmount = (order.paymentMethod === 'COD' || order.paymentMethod === 'Cash On Delivery (COD)')
-      ? formatCurrency(order.totalAmount)
-      : 'PREPAID';
+    const pdfFilename = `Shiprocket-Label-${orderNo}.pdf`;
 
-    const pdfEmbedHtml = labelUrl ? `
-      <div style="margin-bottom: 12px; border-radius: 8px; overflow: hidden; border: 1px solid var(--hairline-border); background: #f9f9f9;">
-        <div style="padding: 10px 12px; background: var(--surface-low); font-size: 11px; display: flex; justify-content: space-between; align-items: center;">
-          <div style="display: flex; align-items: center; gap: 6px;">
-            <span class="material-symbols-outlined" style="font-size: 16px; color: #10B981;">picture_as_pdf</span>
-            <span style="font-weight: 700; color: var(--primary-ink);">Official Courier Shipping Label PDF</span>
-          </div>
-          <button type="button" id="btn-modal-open-pdf" class="btn-card-secondary" style="height: 28px; padding: 0 10px; font-size: 11px; display: flex; align-items: center; gap: 4px; cursor: pointer;">
-            <span class="material-symbols-outlined" style="font-size: 14px;">download</span>
-            <span>Download PDF</span>
-          </button>
-        </div>
-      </div>
-    ` : `
-      <div style="margin-bottom: 12px; padding: 8px 12px; border-radius: 8px; background: rgba(234, 179, 8, 0.1); border: 1px solid rgba(234, 179, 8, 0.3); font-size: 11px; display: flex; justify-content: space-between; align-items: center;">
-        <span style="color: #854D0E;">Label generated on live carrier network.</span>
-        <button id="btn-fetch-live-label" type="button" class="btn-card-secondary" style="height: 26px; padding: 0 8px; font-size: 10px;">
-          Fetch PDF
-        </button>
-      </div>
-    `;
+    if (autoDownload) {
+      triggerSeamlessLabelDownload(rawUrl, pdfFilename);
+    }
 
-    openSubmoduleSheet(`Shipping Label — ${orderNo}`, `
+    openSubmoduleSheet(`Shiprocket Label — ${orderNo}`, `
       <div style="display: flex; flex-direction: column; gap: 12px;">
-        <div style="background: var(--surface-low); padding: 8px 12px; border-radius: var(--radius-sm); border: 1px solid var(--executive-gold); display: flex; align-items: center; justify-content: space-between;">
+        <div style="background: var(--surface-low); padding: 10px 12px; border-radius: var(--radius-sm); border: 1px solid var(--executive-gold); display: flex; align-items: center; justify-content: space-between;">
           <div style="display: flex; align-items: center; gap: 6px;">
-            <span class="material-symbols-outlined" style="color: #10B981; font-size: 18px;">check_circle</span>
-            <span style="font-size: 12px; font-weight: 700; color: var(--primary-ink);">Priority Booked Successfully</span>
+            <span class="material-symbols-outlined" style="color: #10B981; font-size: 18px;">verified</span>
+            <div>
+              <div style="font-size: 12px; font-weight: 700; color: var(--primary-ink);">Official Shiprocket Label</div>
+              <div class="font-mono" style="font-size: 11px; color: var(--meta-gray);">${escapeHtml(courier)} • AWB: ${escapeHtml(awb)}</div>
+            </div>
           </div>
-          <span class="status-badge booked" style="font-size: 10px;">Booked</span>
+          <span class="status-badge booked" style="font-size: 10px;">Shiprocket</span>
         </div>
 
-        ${pdfEmbedHtml}
-
-        <!-- Thermal / Air Cargo Label Rendering -->
-        <div style="background: #FFFFFF; border: 2px solid #111827; border-radius: 8px; padding: 14px; font-family: monospace; color: #111827; box-shadow: 0 4px 12px rgba(0,0,0,0.08);">
-          <div style="display: flex; justify-content: space-between; border-bottom: 2px solid #111827; padding-bottom: 8px;">
-            <div>
-              <div style="font-size: 15px; font-weight: 900; letter-spacing: 0.5px;">DAPPERSFIT LOGISTICS</div>
-              <div style="font-size: 10px; color: #4B5563; font-weight: 700;">PRIORITY AIR DISPATCH • ROUTE AUTO</div>
-            </div>
-            <div style="text-align: right;">
-              <div style="font-size: 13px; font-weight: 800; color: #000;">${escapeHtml(courier)}</div>
-              <div style="font-size: 11px; font-weight: 800; color: #B45309;">${escapeHtml(codAmount)}</div>
-            </div>
-          </div>
-
-          <div style="text-align: center; padding: 12px 0; border-bottom: 2px solid #111827;">
-            <div style="font-size: 10px; font-weight: 700; letter-spacing: 1px; color: #4B5563;">TRACKING / AWB CODE</div>
-            <div style="font-size: 22px; font-weight: 900; letter-spacing: 3px; margin: 4px 0;">${escapeHtml(awb)}</div>
-            <div style="font-size: 11px; letter-spacing: 2px; font-weight: bold; opacity: 0.7;">||||| | |||||| ||| ||||||| |||| ||||||</div>
-            <div style="font-size: 10px; color: #4B5563; margin-top: 2px;">ORDER: ${escapeHtml(orderNo)}</div>
-          </div>
-
-          <div style="padding-top: 10px; font-size: 11px; line-height: 1.45;">
-            <div style="font-weight: 900; font-size: 10px; color: #6B7280; margin-bottom: 2px;">DELIVERY DESTINATION:</div>
-            <div style="font-size: 13px; font-weight: 800;">${escapeHtml(destName)}</div>
-            <div style="color: #374151;">${escapeHtml(destAddr)}</div>
-            <div style="margin-top: 4px; font-weight: 700;">Phone: +91 ${escapeHtml(destPhone)}</div>
-          </div>
-
-          <div style="margin-top: 10px; padding-top: 8px; border-top: 1px dashed #9CA3AF; display: flex; justify-content: space-between; font-size: 10px; color: #6B7280;">
-            <span>Pickup Hub: ${escapeHtml(order.pickupLocation || 'dapperss (Chennai 600002)')}</span>
-            <span>Wt: ${order.weight || 0.5} kg</span>
-          </div>
+        <div style="border-radius: 8px; overflow: hidden; border: 1px solid var(--hairline-border); background: #FFFFFF;">
+          <iframe src="${escapeHtml(labelUrl)}" title="Official Shiprocket Label PDF" style="width: 100%; height: 380px; border: none; display: block;"></iframe>
         </div>
 
         <div style="display: flex; gap: 8px; margin-top: 4px;">
-          ${labelUrl ? `
-            <button type="button" id="btn-modal-download-pdf" class="btn-gold-primary" style="flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px; padding: 10px; cursor: pointer;">
-              <span class="material-symbols-outlined">download</span>
-              <span>Download PDF Label</span>
-            </button>
-          ` : `
-            <button type="button" id="btn-label-direct-action" class="btn-gold-primary" style="flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px; padding: 10px;">
-              <span class="material-symbols-outlined">download</span>
-              <span>Download Label</span>
-            </button>
-          `}
-          <button type="button" class="btn-ink-primary" style="flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px; padding: 10px;" onclick="window.print()">
-            <span class="material-symbols-outlined">print</span>
-            <span>Print Label</span>
+          <button type="button" id="btn-modal-download-pdf" class="btn-gold-primary" style="flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px; padding: 12px; cursor: pointer;">
+            <span class="material-symbols-outlined">download</span>
+            <span>Download Official Shiprocket Label</span>
           </button>
         </div>
       </div>
     `);
 
-    document.getElementById('btn-modal-open-pdf')?.addEventListener('click', () => {
-      triggerSeamlessLabelDownload(labelUrl, `Dappersfit-Label-${orderNo}.pdf`);
-    });
     document.getElementById('btn-modal-download-pdf')?.addEventListener('click', () => {
-      triggerSeamlessLabelDownload(labelUrl, `Dappersfit-Label-${orderNo}.pdf`);
-    });
-
-    // Fetch live label if not present
-    document.getElementById('btn-fetch-live-label')?.addEventListener('click', async () => {
-      showToast('Retrieving label from Shiprocket...', 'info');
-      try {
-        const lRes = await apiFetch('/api/shiprocket/label', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ shipmentId: order.shipmentId || order.id })
-        });
-        if (lRes.ok) {
-          const lData = await lRes.json();
-          if (lData.labelUrl) {
-            order.labelUrl = lData.labelUrl;
-            try { localStorage.setItem(STORAGE_KEY_ORDERS, JSON.stringify(state.orders)); } catch (_) {}
-            showToast('Label retrieved! Reloading...', 'success');
-            showShippingLabelModal(order);
-          }
-        }
-      } catch (e) {
-        showToast('Unable to fetch live label', 'error');
-      }
-    });
-
-    document.getElementById('btn-label-direct-action')?.addEventListener('click', () => {
-      window.print();
+      triggerSeamlessLabelDownload(rawUrl, pdfFilename);
     });
   }
 
-  // --- Priority Dispatch Action (Calls Live Backend API with Fallback) ---
+  // --- Priority Dispatch Action (Strict Live Shiprocket Booking & Official Label Only) ---
   async function triggerPriorityDispatch(orderId) {
     const order = state.orders.find(o => o.id === orderId);
     if (!order) return;
 
-    // PREVENT DUPLICATE BOOKINGS: If already booked, open label directly without calling priority-book
-    if (order.status === 'booked' && (order.awbCode || order.shipmentId)) {
+    // 1. In-flight concurrency lock to prevent duplicate orders from double-tapping
+    if (activeBookingOrderIds.has(order.id)) {
       haptic('light');
-      showToast(`Order ${order.orderNumber} is already booked (AWB: ${order.awbCode}). Opening shipping label...`, 'info');
+      showToast(`Booking is already in progress in Shiprocket for ${order.orderNumber}...`, 'info');
+      return;
+    }
 
-      // If labelUrl is missing, try retrieving from backend without rebooking
-      if (!order.labelUrl) {
+    // 2. If order was previously marked booked by an old local fallback (not a real Shiprocket booking), reset it to pending
+    if (order.status === 'booked' && !isGenuineShiprocketBooking(order)) {
+      order.status = 'pending';
+      delete order.awbCode;
+      delete order.shipmentId;
+      delete order.shiprocketOrderId;
+      delete order.labelUrl;
+    }
+
+    // 3. PREVENT DUPLICATE BOOKINGS: If already genuinely booked in Shiprocket, never rebook; download & show official Shiprocket label
+    if (
+      isGenuineShiprocketBooking(order) &&
+      ['booked', 'awb_assigned', 'shipped', 'delivered', 'processed'].includes(String(order.status || '').toLowerCase())
+    ) {
+      haptic('light');
+      showToast(`Order ${order.orderNumber} is already booked in Shiprocket (AWB: ${order.awbCode}). Downloading Shiprocket label...`, 'info');
+
+      if (!isOfficialShiprocketLabel(order.labelUrl)) {
         try {
           const lRes = await apiFetch('/api/shiprocket/label', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ shipmentId: order.shipmentId || order.id })
+            body: JSON.stringify({ shipmentId: order.shipmentId || order.shiprocketOrderId || order.id })
           });
           if (lRes.ok) {
             const lData = await lRes.json();
-            if (lData.labelUrl) {
+            if (lData && lData.success && isOfficialShiprocketLabel(lData.labelUrl)) {
               order.labelUrl = lData.labelUrl;
               try { localStorage.setItem(STORAGE_KEY_ORDERS, JSON.stringify(state.orders)); } catch (_) {}
             }
@@ -1648,19 +1693,32 @@
         } catch (_) {}
       }
 
-      // Auto-trigger seamless shipping label PDF download without Chrome popup/permission prompts
-      if (order.labelUrl) {
-        triggerSeamlessLabelDownload(order.labelUrl, `Dappersfit-Label-${order.orderNumber || order.id}.pdf`);
+      if (!isOfficialShiprocketLabel(order.labelUrl)) {
+        showToast('Official Shiprocket label could not be retrieved for this shipment.', 'error');
+        return;
       }
+
+      await triggerSeamlessLabelDownload(order.labelUrl, `Shiprocket-Label-${order.orderNumber || order.id}.pdf`);
 
       openOrderDetailSheet(order.id);
       setTimeout(() => {
-        showShippingLabelModal(order);
+        showShippingLabelModal(order, false);
       }, 350);
       return;
     }
 
-    // Check mandatory fields before dispatching
+    // 4. PREVENT DUPLICATE ORDERS IN SHIPROCKET: Block if another identical order is already booked or being booked in Shiprocket
+    const duplicateBooked = findDuplicateBookedInShiprocket(order);
+    if (duplicateBooked) {
+      haptic('heavy');
+      showToast(
+        `Duplicate order blocked! Identical order ${duplicateBooked.orderNumber || duplicateBooked.id} is already booked in Shiprocket (AWB: ${duplicateBooked.awbCode || 'Assigned'}).`,
+        'error'
+      );
+      return;
+    }
+
+    // 5. Check mandatory fields before dispatching
     const cName = (order.customerName || '').trim();
     const cPhone = (order.address?.phone || '').replace(/\D/g, '');
     const cAddr = (order.address?.address || '').trim();
@@ -1678,8 +1736,9 @@
       return;
     }
 
+    activeBookingOrderIds.add(order.id);
     haptic('heavy');
-    showToast(`Booking Priority Air for ${order.orderNumber}...`, 'info');
+    showToast(`Booking ${order.orderNumber} in Shiprocket & generating official label...`, 'info');
 
     try {
       const pName = 'dapperss';
@@ -1697,65 +1756,94 @@
         })
       });
 
-      if (res.ok) {
-        const data = await res.json();
-        if (data.success) {
-          order.status = data.status || 'booked';
-          order.awbCode = data.awbCode || order.awbCode || ('789' + Math.floor(Math.random() * 9000000 + 1000000));
-          order.courierName = data.courierName || order.courierName || 'Blue Dart Express (Air)';
-          order.pickupLocation = data.pickupLocation || pName;
-          order.rate = data.rate || order.rate || 68.0;
-          order.labelUrl = data.labelUrl || order.labelUrl;
-          if (data.order) Object.assign(order, data.order);
+      let data = null;
+      try {
+        data = await res.json();
+      } catch (_) {}
 
-          // Auto-trigger seamless shipping label PDF download without Chrome popup/permission prompts
-          if (order.labelUrl) {
-            triggerSeamlessLabelDownload(order.labelUrl, `Dappersfit-Label-${order.orderNumber || order.id}.pdf`);
-          }
-        } else {
-          // Graceful fallback if simulated Shiprocket
-          order.status = 'booked';
-          order.courierName = 'Blue Dart Express (Air)';
-          order.awbCode = '789' + Math.floor(Math.random() * 9000000 + 1000000);
-          order.shipmentId = 'SHP-' + Math.floor(Math.random() * 900000 + 100000);
-        }
-      } else {
-        order.status = 'booked';
-        order.courierName = 'Blue Dart Express (Air)';
-        order.awbCode = '789' + Math.floor(Math.random() * 9000000 + 1000000);
+      // Strictly require:
+      // 1) HTTP 200 + data.success === true
+      // 2) Genuine Shiprocket booking (real shiprocketOrderId, shipmentId, awbCode)
+      // 3) Official Shiprocket label URL (data.labelUrl from Shiprocket)
+      const hasValidShiprocketBooking = res.ok && data && data.success === true && isGenuineShiprocketBooking(data);
+      const hasOfficialLabel = Boolean(data && isOfficialShiprocketLabel(data.labelUrl));
+
+      if (!hasValidShiprocketBooking || !hasOfficialLabel) {
+        // DO NOT BOOK THE ORDER if Shiprocket booking or official Shiprocket label failed!
+        order.status = 'pending';
+        delete order.awbCode;
+        delete order.shipmentId;
+        delete order.shiprocketOrderId;
+        delete order.labelUrl;
+        try { localStorage.setItem(STORAGE_KEY_ORDERS, JSON.stringify(state.orders)); } catch (_) {}
+        renderOrders();
+        renderCockpit();
+
+        const errMsg =
+          data?.error ||
+          (!hasValidShiprocketBooking
+            ? 'Order was not booked in Shiprocket. Order remains pending.'
+            : 'Official Shiprocket label could not be generated. Order was not booked.');
+        showToast(errMsg, 'error');
+        return;
       }
-    } catch (_) {
+
+      // Update order with verified live Shiprocket booking & official Shiprocket label
+      if (data.order) {
+        Object.assign(order, data.order);
+      }
       order.status = 'booked';
-      order.courierName = 'Blue Dart Express (Air)';
-      order.awbCode = '789' + Math.floor(Math.random() * 9000000 + 1000000);
+      order.shiprocketOrderId = String(data.shiprocketOrderId);
+      order.shipmentId = String(data.shipmentId);
+      order.awbCode = String(data.awbCode);
+      order.courierName = data.courierName || order.courierName || 'Shiprocket Partner';
+      order.pickupLocation = data.pickupLocation || pName;
+      order.rate = data.rate || order.rate || 68.0;
+      order.labelUrl = data.labelUrl;
+
+      try { localStorage.setItem(STORAGE_KEY_ORDERS, JSON.stringify(state.orders)); } catch (_) {}
+
+      // 2-Way Real-time Firebase Firestore Sync
+      if (window.FirebaseService && typeof window.FirebaseService.saveOrder === 'function') {
+        window.FirebaseService.saveOrder(order).catch(err => console.warn('[Firebase] saveOrder warning:', err));
+      }
+
+      state.feed.unshift({
+        id: 'f-now-' + Date.now(),
+        employee: state.user?.name || 'Operator',
+        action: 'Shiprocket Priority Dispatch Booked',
+        target: `${order.orderNumber} via ${order.courierName}`,
+        amount: formatCurrency(order.totalAmount),
+        time: 'Just now',
+        status: 'Booked'
+      });
+
+      renderOrders();
+      renderCockpit();
+      showToast(`Booked ${order.orderNumber} in Shiprocket! Downloading label...`, 'success');
+
+      // Automatically download the official Shiprocket PDF label immediately
+      await triggerSeamlessLabelDownload(order.labelUrl, `Shiprocket-Label-${order.orderNumber || order.id}.pdf`);
+
+      // Display order details and the official Shiprocket label modal
+      openOrderDetailSheet(order.id);
+      setTimeout(() => {
+        showShippingLabelModal(order, false);
+      }, 380);
+    } catch (err) {
+      // Never fallback to local fake booking on network/server error
+      order.status = 'pending';
+      delete order.awbCode;
+      delete order.shipmentId;
+      delete order.shiprocketOrderId;
+      delete order.labelUrl;
+      try { localStorage.setItem(STORAGE_KEY_ORDERS, JSON.stringify(state.orders)); } catch (_) {}
+      renderOrders();
+      renderCockpit();
+      showToast('Shiprocket connection failed. Order was not booked.', 'error');
+    } finally {
+      activeBookingOrderIds.delete(order.id);
     }
-
-    try { localStorage.setItem(STORAGE_KEY_ORDERS, JSON.stringify(state.orders)); } catch (_) {}
-
-    // 2-Way Real-time Firebase Firestore Sync
-    if (window.FirebaseService && typeof window.FirebaseService.saveOrder === 'function') {
-      window.FirebaseService.saveOrder(order).catch(err => console.warn('[Firebase] saveOrder warning:', err));
-    }
-
-    state.feed.unshift({
-      id: 'f-now-' + Date.now(),
-      employee: state.user?.name || 'Operator',
-      action: 'Priority Air Dispatch Booked',
-      target: `${order.orderNumber} via ${order.courierName || 'Blue Dart Air'}`,
-      amount: formatCurrency(order.totalAmount),
-      time: 'Just now',
-      status: 'Booked'
-    });
-
-    renderOrders();
-    renderCockpit();
-    showToast(`Booked ${order.orderNumber}! AWB: ${order.awbCode}`, 'success');
-
-    // Automatically display the correct order details and generated shipping label
-    openOrderDetailSheet(order.id);
-    setTimeout(() => {
-      showShippingLabelModal(order);
-    }, 380);
   }
 
   // --- Delete Order Action (Admin) ---
@@ -2524,13 +2612,32 @@
           createdByEmployeePhone: creatorPhone || 'Employee information unavailable'
         };
 
-        // 1. Try sending to backend API POST /api/orders
+        // 1. Try sending to backend API POST /api/orders (enforce server-side duplicate check)
         try {
-          await apiFetch('/api/orders', {
+          const createRes = await apiFetch('/api/orders', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(newOrder)
           });
+          if (createRes.status === 409) {
+            const dupData = await createRes.json().catch(() => ({}));
+            haptic('error');
+            if (duplicateAlert) {
+              duplicateAlert.style.display = 'flex';
+              duplicateAlert.innerHTML = `
+                <div style="display:flex; align-items:center; gap:6px; font-weight:800; font-size:12px;">
+                  <span class="material-symbols-outlined" style="font-size:18px;">warning</span>
+                  <span>Duplicate Order Detected</span>
+                </div>
+                <div style="font-size:11px; line-height:1.4;">
+                  ${escapeHtml(dupData.message || 'An identical order already exists in the system.')}
+                </div>
+              `;
+              duplicateAlert.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }
+            showToast(dupData.message || 'Duplicate Order Detected!', 'error');
+            return;
+          }
         } catch (_) {}
 
         // 2-Way Real-time Firebase Firestore Sync
@@ -2738,7 +2845,7 @@
 
 
     document.getElementById('btn-view-label')?.addEventListener('click', () => {
-      showShippingLabelModal(order);
+      showShippingLabelModal(order, true);
     });
 
     document.getElementById('btn-view-invoice')?.addEventListener('click', () => {
@@ -2771,6 +2878,14 @@
       if (!select) return;
       haptic('medium');
       const newStatus = select.value;
+      if (
+        (newStatus === 'booked' || newStatus === 'shipped') &&
+        (!isGenuineShiprocketBooking(order) || !isOfficialShiprocketLabel(order.labelUrl))
+      ) {
+        showToast('Order can only be marked as Booked when booked in Shiprocket with an official Shiprocket label.', 'error');
+        select.value = order.status || 'pending';
+        return;
+      }
       order.status = newStatus;
 
       // Try sending to backend API

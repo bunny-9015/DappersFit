@@ -144,24 +144,28 @@ async function runTests() {
     assert.strictEqual(plan.candidates[2].rate, 72.00);
   });
 
-  it('Cheapest Selection: Exception Tier 2 (BlueDart 2KG vs Delhivery 2KG) picks cheaper first', () => {
-    // Scenario A: Delhivery 2KG is cheaper
+  it('Exception 2KG Priority: BlueDart Surface 2KG is checked first before Delhivery Surface 2KG', () => {
+    // Scenario A: Even when Delhivery 2KG is cheaper, BlueDart Surface 2KG (Tier 2) comes first
     const couriersA: ServiceableCourier[] = [
       { courierId: 201, courierName: 'BlueDart Surface 2KG', rate: 95.00 },
       { courierId: 202, courierName: 'Delhivery Surface 2kg Ground', rate: 78.00 }
     ];
     const planA = selectPriorityCourierPlan({ items: [{ name: 'Water Gun', sku: 'WG-01' }] }, couriersA);
-    assert.strictEqual(planA.candidates[0].courierId, 202);
-    assert.strictEqual(planA.candidates[0].courierName, 'Delhivery Surface 2kg Ground');
+    assert.strictEqual(planA.candidates[0].courierId, 201);
+    assert.strictEqual(planA.candidates[0].courierName, 'BlueDart Surface 2KG');
+    assert.strictEqual(planA.candidates[1].courierId, 202);
+    assert.strictEqual(planA.candidates[1].courierName, 'Delhivery Surface 2kg Ground');
 
-    // Scenario B: BlueDart 2KG is cheaper
+    // Scenario B: Multiple BlueDart 2KG options are sorted cheapest first, followed by Delhivery 2KG
     const couriersB: ServiceableCourier[] = [
-      { courierId: 201, courierName: 'BlueDart Surface 2KG', rate: 68.00 },
-      { courierId: 202, courierName: 'Delhivery Surface 2kg Ground', rate: 84.00 }
+      { courierId: 202, courierName: 'Delhivery Surface 2kg Ground', rate: 70.00 },
+      { courierId: 203, courierName: 'BlueDart Surface 2KG Standard', rate: 92.00 },
+      { courierId: 201, courierName: 'BlueDart Surface 2KG Economy', rate: 84.00 }
     ];
     const planB = selectPriorityCourierPlan({ items: [{ name: 'Water Gun', sku: 'WG-01' }] }, couriersB);
     assert.strictEqual(planB.candidates[0].courierId, 201);
-    assert.strictEqual(planB.candidates[0].courierName, 'BlueDart Surface 2KG');
+    assert.strictEqual(planB.candidates[1].courierId, 203);
+    assert.strictEqual(planB.candidates[2].courierId, 202);
   });
 
   // -------------------------------------------------------------------------

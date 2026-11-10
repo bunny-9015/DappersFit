@@ -21,8 +21,9 @@
  * 
  *    B. Exception Orders:
  *       1. dapper (in-house channel)
- *       2. BlueDart Surface 2KG and Delhivery Surface 2KG (Treated as ONE tier, pick cheaper)
- *       3. India Post (Speed Post / Business Post)
+ *       2. BlueDart Surface 2KG
+ *       3. Delhivery Surface 2KG
+ *       4. India Post (Speed Post / Business Post)
  *       - Air/express couriers must NEVER be attempted before every surface tier has been tried.
  * 
  * 3. Selection & Fallback:
@@ -243,19 +244,27 @@ export function matchesBlueDartAir(courier: ServiceableCourier): boolean {
   return isBlueDart && isAir;
 }
 
-/**
- * Exception Tier 2: BlueDart Surface 2KG and Delhivery Surface 2KG, treated as ONE tier
- * (pick the cheaper of the two).
- */
-export function matchesSurface2KG(courier: ServiceableCourier): boolean {
+export function matchesBlueDartSurface2KG(courier: ServiceableCourier): boolean {
   const name = normalizeCourierName(courier);
   const has2kg = /(2kg|2\s*kg)/i.test(name);
   const isSurface = name.includes('surface') || name.includes('ground');
+  const isBlueDart = name.includes('bluedart') || (name.includes('blue') && name.includes('dart'));
+  return isBlueDart && isSurface && has2kg;
+}
 
-  const isBlueDart2KG = (name.includes('blue') && name.includes('dart')) && isSurface && has2kg;
-  const isDelhivery2KG = (name.includes('delhivery') || name.includes('delievry') || name.includes('delivery')) && isSurface && has2kg;
+export function matchesDelhiverySurface2KG(courier: ServiceableCourier): boolean {
+  const name = normalizeCourierName(courier);
+  const has2kg = /(2kg|2\s*kg)/i.test(name);
+  const isSurface = name.includes('surface') || name.includes('ground');
+  const isDelhivery = name.includes('delhivery') || name.includes('delievry') || name.includes('dwliverey') || name.includes('delivery');
+  return isDelhivery && isSurface && has2kg;
+}
 
-  return isBlueDart2KG || isDelhivery2KG;
+/**
+ * Combined helper for any 2KG Surface courier (backward compatibility).
+ */
+export function matchesSurface2KG(courier: ServiceableCourier): boolean {
+  return matchesBlueDartSurface2KG(courier) || matchesDelhiverySurface2KG(courier);
 }
 
 // ---------------------------------------------------------------------------
@@ -313,8 +322,9 @@ export const STANDARD_ORDER_TIERS: CourierTierConfig[] = [
 /**
  * Exception Order Tiers (strict order, surface first):
  * 1. dapper (in-house channel)
- * 2. BlueDart Surface 2KG and Delhivery Surface 2KG (Treated as ONE tier, cheaper first)
- * 3. India Post (Speed Post / Business Post)
+ * 2. BlueDart Surface 2KG
+ * 3. Delhivery Surface 2KG
+ * 4. India Post (Speed Post / Business Post)
  * 
  * Air/express couriers must never be attempted before every surface tier above them has been tried.
  */
@@ -326,10 +336,16 @@ export const EXCEPTION_ORDER_TIERS: CourierTierConfig[] = [
     matches: matchesDapper
   },
   {
-    tierId: 'SURFACE_2KG_EXCEPTION',
-    tierName: 'BlueDart Surface 2KG and Delhivery Surface 2KG (Single Tier - Lowest Rate First)',
+    tierId: 'BLUEDART_SURFACE_2KG',
+    tierName: 'BlueDart Surface 2KG',
     isSurface: true,
-    matches: matchesSurface2KG
+    matches: matchesBlueDartSurface2KG
+  },
+  {
+    tierId: 'DELHIVERY_SURFACE_2KG',
+    tierName: 'Delhivery Surface 2KG',
+    isSurface: true,
+    matches: matchesDelhiverySurface2KG
   },
   {
     tierId: 'INDIA_POST',

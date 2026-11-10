@@ -5,6 +5,8 @@ import {
   matchesIndiaPost,
   matchesDelhiveryAir,
   matchesBlueDartAir,
+  matchesBlueDartSurface2KG,
+  matchesDelhiverySurface2KG,
   matchesSurface2KG,
   ServiceableCourier
 } from './priorityCourierModule';
@@ -20,7 +22,8 @@ export const COURIER_PRIORITY_STANDARD = [
 
 export const COURIER_PRIORITY_EXCEPTION = [
   'DAPPER',
-  'SURFACE_2KG_EXCEPTION',
+  'BLUEDART_SURFACE_2KG',
+  'DELHIVERY_SURFACE_2KG',
   'INDIA_POST'
 ];
 
@@ -41,6 +44,11 @@ export function matchesCourierCondition(courier: ServiceableCourier, condition: 
       return matchesDelhiveryAir(courier);
     case 'BLUEDART_AIR':
       return matchesBlueDartAir(courier);
+    case 'BLUEDART_SURFACE_2KG':
+      return matchesBlueDartSurface2KG(courier);
+    case 'DELHIVERY_SURFACE_2KG':
+    case 'DELIVERY_SURFACE_2KG':
+      return matchesDelhiverySurface2KG(courier);
     case 'SURFACE_2KG_EXCEPTION':
       return matchesSurface2KG(courier);
     default:

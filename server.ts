@@ -4841,10 +4841,96 @@ app.post('/api/orders/:orderId/set-status', async (req, res) => {
   res.json({ success: true, order });
 });
 
+// Helper: Validate whether a label URL is an official Shiprocket label PDF (never a simulated/custom thermal fallback)
+function isOfficialShiprocketLabelUrl(url?: string | null): boolean {
+  if (!url || typeof url !== 'string') return false;
+  if (url.includes('download-label-pdf')) return false;
+  return (
+    url.includes('/api/shiprocket/download-live-pdf') ||
+    url.includes('sr-core-cdn') ||
+    url.includes('shiprocket') ||
+    url.includes('amazonaws.com') ||
+    url.includes('kr-shipmultichannel')
+  );
+}
+
+// Helper: Validate whether an order has a genuine live Shiprocket booking (not simulated)
+function isGenuineShiprocketBooking(order: any): boolean {
+  if (!order) return false;
+  const shipmentId = String(order.shipmentId || '').trim();
+  const srOrderId = String(order.shiprocketOrderId || '').trim();
+  const awbCode = String(order.awbCode || '').trim();
+  if (!shipmentId || !awbCode) return false;
+  if (
+    shipmentId.startsWith('sim_') ||
+    shipmentId.startsWith('SM-') ||
+    shipmentId.startsWith('SHP-') ||
+    srOrderId.startsWith('sim_') ||
+    srOrderId.startsWith('SR-') ||
+    awbCode.startsWith('AWB') ||
+    awbCode.startsWith('789')
+  ) {
+    return false;
+  }
+  return true;
+}
+
+// Helper: Build normalized customer+order fingerprint to prevent duplicate orders from booking in Shiprocket
+function getOrderDedupeFingerprint(order: any): string {
+  if (!order) return '';
+  const normStr = (s: any) => String(s || '').toLowerCase().trim().replace(/[^a-z0-9]/g, '');
+  const normDigits = (p: any) => String(p || '').replace(/\D/g, '');
+  const phone = normDigits(order.address?.phone || order.phone).slice(-10);
+  const pin = normDigits(order.address?.pincode || order.pincode);
+  const cust = normStr(order.customerName || order.address?.name);
+  const firstItem = Array.isArray(order.items) && order.items.length > 0 ? order.items[0] : null;
+  const prod = normStr(firstItem?.sku || firstItem?.name || order.productName || order.item);
+  const qty = Number(firstItem?.quantity || order.quantity || 1);
+  if (!phone || !pin) return '';
+  return `${cust}|${phone}|${pin}|${prod}|${qty}`;
+}
+
+// Helper: Check if another order with the same orderNumber or identical customer/phone/pincode/item is already booked in Shiprocket
+function findDuplicateBookedOrderInShiprocket(targetOrder: any): any | null {
+  if (!targetOrder) return null;
+  const targetId = String(targetOrder.id || '').trim();
+  const targetOrderNo = String(targetOrder.orderNumber || '').trim().toLowerCase();
+  const targetFp = getOrderDedupeFingerprint(targetOrder);
+
+  return mockOrders.find((o: any) => {
+    if (!o || o.status === 'cancelled' || o.status === 'failed') return false;
+    const oId = String(o.id || '').trim();
+    if (oId === targetId) return false;
+
+    const isAlreadyBooked =
+      isGenuineShiprocketBooking(o) ||
+      (['booked', 'awb_assigned', 'shipped', 'delivered', 'processed'].includes(String(o.status || '').toLowerCase()) &&
+        Boolean(o.awbCode || o.shipmentId));
+
+    if (!isAlreadyBooked) return false;
+
+    const oOrderNo = String(o.orderNumber || '').trim().toLowerCase();
+    if (targetOrderNo && oOrderNo && targetOrderNo === oOrderNo) {
+      return true;
+    }
+
+    if (targetFp) {
+      const oFp = getOrderDedupeFingerprint(o);
+      if (oFp && oFp === targetFp) {
+        return true;
+      }
+    }
+    return false;
+  }) || null;
+}
+
+// In-flight concurrency lock set to prevent duplicate concurrent Shiprocket bookings
+const inFlightShiprocketBookings = new Set<string>();
+
 // API Route: Priority Automated Courier Matching and Booking
 app.post('/api/shiprocket/order/priority-book', async (req, res) => {
   clearShiprocketCache();
-  const { orderId, assignedEmployeeId, pickupLocationName, pickupPostcode, pickupAddress, forceRebook } = req.body;
+  const { orderId, assignedEmployeeId, pickupLocationName, pickupPostcode, pickupAddress } = req.body;
 
   let orderToBook = await getOrderFromDb(orderId);
   if (!orderToBook) {
@@ -4866,40 +4952,49 @@ app.post('/api/shiprocket/order/priority-book', async (req, res) => {
     });
   }
 
-  const requestedLocationName = (pickupLocationName || pickupAddress?.name || '').trim();
-  const existingPickup = (orderToBook.pickupLocation || '').trim();
-  const isChangingPickup = Boolean(requestedLocationName && existingPickup && requestedLocationName.toLowerCase() !== existingPickup.toLowerCase());
-  const isBookedOnNonDappers = existingPickup && !existingPickup.toLowerCase().includes('dapper');
-  const isSimulatedShipment = String(orderToBook.shipmentId || '').startsWith('sim_') || 
-                             String(orderToBook.shiprocketOrderId || '').startsWith('sim_') ||
-                             String(orderToBook.awbCode || '').startsWith('AWB');
-  const shouldForceRebook = Boolean(forceRebook) || isChangingPickup || isBookedOnNonDappers || (isLiveConfigured() && isSimulatedShipment);
+  // Strict Live Shiprocket Requirement: Orders must ONLY book if booked in live Shiprocket
+  if (!isLiveConfigured()) {
+    return res.status(400).json({
+      success: false,
+      status: 'pending',
+      error: 'Shiprocket live credentials are not configured. Orders can only be booked in Shiprocket.'
+    });
+  }
 
-  // Existing shipment guard: if the shipment is already booked and NOT changing pickup address or rebooking, retrieve its existing label
-  if (orderToBook.status === 'booked' && (orderToBook.shipmentId || orderToBook.shiprocketOrderId) && !shouldForceRebook) {
-    console.log(`[Shiprocket Priority Booking] Order ${orderToBook.orderNumber || orderId} is already booked (Shipment ID: ${orderToBook.shipmentId}). Retrieving existing label...`);
-    let labelUrl = orderToBook.labelUrl;
-    let labelGenerated = !!labelUrl;
+  // 1. Existing Shiprocket booking guard: NEVER rebook or duplicate an order already booked in Shiprocket
+  if (
+    isGenuineShiprocketBooking(orderToBook) &&
+    ['booked', 'awb_assigned', 'shipped', 'delivered', 'processed'].includes(String(orderToBook.status || '').toLowerCase())
+  ) {
+    console.log(`[Shiprocket Priority Booking] Order ${orderToBook.orderNumber || orderId} is already booked in Shiprocket (Shipment ID: ${orderToBook.shipmentId}, AWB: ${orderToBook.awbCode}). Verifying official Shiprocket label...`);
+    let labelUrl = isOfficialShiprocketLabelUrl(orderToBook.labelUrl) ? orderToBook.labelUrl : '';
 
-    if (!labelUrl && isLiveConfigured() && orderToBook.shipmentId) {
+    if (!labelUrl && orderToBook.shipmentId) {
       try {
         const headers = await getShiprocketAuthHeaders();
         const labelResult = await generateOrFetchShiprocketLabel(
           headers,
           orderToBook.shipmentId,
           orderToBook.orderNumber || orderToBook.id,
-          2,
-          1000
+          4,
+          1500
         );
-        if (labelResult.success && labelResult.labelUrl) {
+        if (labelResult.success && labelResult.labelUrl && isOfficialShiprocketLabelUrl(labelResult.labelUrl)) {
           labelUrl = labelResult.labelUrl;
-          labelGenerated = true;
           orderToBook.labelUrl = labelUrl;
           await saveSingleOrderToDb(orderToBook);
         }
       } catch (lErr) {
-        console.warn('[Shiprocket] Failed to retrieve label for already booked priority order:', lErr);
+        console.warn('[Shiprocket] Failed to retrieve official label for already booked priority order:', lErr);
       }
+    }
+
+    if (!labelUrl || !isOfficialShiprocketLabelUrl(labelUrl)) {
+      return res.status(400).json({
+        success: false,
+        status: orderToBook.status,
+        error: 'Official Shiprocket label could not be retrieved for this shipment.'
+      });
     }
 
     return res.json({
@@ -4911,109 +5006,114 @@ app.post('/api/shiprocket/order/priority-book', async (req, res) => {
       awbCode: String(orderToBook.awbCode || ''),
       courierName: orderToBook.courierName || 'Courier Partner',
       pickupLocation: orderToBook.pickupLocation,
-      rate: 90.00,
-      labelUrl: orderToBook.labelUrl,
-      labelGenerated,
+      rate: orderToBook.rate || 90.00,
+      labelUrl,
+      labelGenerated: true,
       alreadyBooked: true
     });
   }
 
+  // 2. Duplicate Order Prevention: Block if another identical order is already booked in Shiprocket
+  const duplicateBooked = findDuplicateBookedOrderInShiprocket(orderToBook);
+  if (duplicateBooked) {
+    const dupMsg = `Duplicate order blocked: Order ${duplicateBooked.orderNumber || duplicateBooked.id} for this customer is already booked in Shiprocket (AWB: ${duplicateBooked.awbCode}).`;
+    console.warn(`[Shiprocket Duplicate Guard] ${dupMsg}`);
+    return res.status(409).json({
+      success: false,
+      status: 'pending',
+      error: dupMsg
+    });
+  }
+
+  // 3. In-flight concurrency lock: Prevent double-clicks or parallel requests from creating duplicate Shiprocket orders
+  const lockKeys = [
+    `id:${String(orderToBook.id)}`,
+    `ord:${String(orderToBook.orderNumber || orderToBook.id)}`,
+    getOrderDedupeFingerprint(orderToBook) ? `fp:${getOrderDedupeFingerprint(orderToBook)}` : ''
+  ].filter(Boolean);
+
+  if (lockKeys.some(k => inFlightShiprocketBookings.has(k))) {
+    return res.status(409).json({
+      success: false,
+      status: 'pending',
+      error: `Booking is already in progress in Shiprocket for Order ${orderToBook.orderNumber || orderToBook.id}. Duplicate request blocked.`
+    });
+  }
+
+  lockKeys.forEach(k => inFlightShiprocketBookings.add(k));
+
   try {
-    let couriersList = [];
+    let couriersList: any[] = [];
     // Priority Booking Requirement: ALL shipments booked through Priority Book MUST use the configured
     // Dappers pickup address (dapperss, Chennai 600002) by default.
-    // Never use a previously selected warehouse (e.g. Ashok og / Mumbai) or another location as default.
     const targetLocationName = 'dapperss';
     const targetPostcode = '600002';
     const allowDefault = false;
 
+    // 1. Resolve and Validate Pickup Address in Live Shiprocket
+    const headers = await getShiprocketAuthHeaders();
+    const pickupRes = await validateAndResolvePickupLocation(
+      headers,
+      targetLocationName,
+      targetPostcode,
+      pickupAddress,
+      allowDefault
+    );
 
-    // 1. Resolve and Validate Pickup Address
-    let resolvedPickupLocation: any;
-    if (isLiveConfigured()) {
-      const headers = await getShiprocketAuthHeaders();
-      const pickupRes = await validateAndResolvePickupLocation(
-        headers,
-        targetLocationName,
-        targetPostcode,
-        pickupAddress,
-        allowDefault
-      );
+    if (!pickupRes.success || !pickupRes.location) {
+      console.error('[Shiprocket Priority Booking] Pickup validation failed:', pickupRes.error);
+      return res.status(400).json({
+        success: false,
+        status: 'pending',
+        error: pickupRes.error
+      });
+    }
 
-      if (!pickupRes.success || !pickupRes.location) {
-        console.error('[Shiprocket Priority Booking] Pickup validation failed:', pickupRes.error);
-        return res.status(400).json({
-          success: false,
-          status: 'failed',
-          error: pickupRes.error
-        });
-      }
+    const resolvedPickupLocation = pickupRes.location;
+    console.log(`[Shiprocket Priority Booking] Confirmed pickup location: "${resolvedPickupLocation.name}" (PIN: ${resolvedPickupLocation.pincode})`);
 
-      resolvedPickupLocation = pickupRes.location;
-      console.log(`[Shiprocket Priority Booking] Confirmed pickup location: "${resolvedPickupLocation.name}" (PIN: ${resolvedPickupLocation.pincode})`);
-
-      // Check Serviceability using resolved pickup pincode
-      try {
-        const isPrepaid = orderToBook.paymentMethod && orderToBook.paymentMethod.toUpperCase() === 'PREPAID';
-        const codQuery = isPrepaid ? '0' : '1';
-        const endpoint = `/courier/serviceability?pickup_postcode=${resolvedPickupLocation.pincode}&delivery_postcode=${orderToBook.address.pincode}&weight=${orderToBook.weight || 0.5}&cod=${codQuery}`;
-        const data = await shiprocket.rawRequest(endpoint, 'GET', headers);
-        const rawCouriers = data?.data?.available_courier_companies || [];
-        couriersList = rawCouriers.map((c: any) => ({
-          courierId: c.courier_company_id,
-          courierName: c.courier_name,
-          rate: parseFloat(c.rate || '90.00'),
-          eta: c.etd || '3-4 Days',
-          rating: parseFloat(c.rating || '4.2'),
-          cod: !!c.cod,
-          minWeight: parseFloat(c.min_weight || '0.5')
-        }));
-      } catch (err: any) {
-        console.log('Priority booking live serviceability query failed:', err.message || err);
-      }
-    } else {
-      // Simulation pickup validation
-      const simPickupRes = await validateAndResolvePickupLocation(
-        null,
-        targetLocationName,
-        targetPostcode,
-        pickupAddress,
-        allowDefault
-      );
-
-      if (!simPickupRes.success || !simPickupRes.location) {
-        return res.status(400).json({
-          success: false,
-          status: 'failed',
-          error: simPickupRes.error
-        });
-      }
-
-      resolvedPickupLocation = simPickupRes.location;
+    // Check Live Serviceability in Shiprocket using resolved pickup pincode
+    try {
+      const isPrepaid = orderToBook.paymentMethod && orderToBook.paymentMethod.toUpperCase() === 'PREPAID';
+      const codQuery = isPrepaid ? '0' : '1';
+      const endpoint = `/courier/serviceability?pickup_postcode=${resolvedPickupLocation.pincode}&delivery_postcode=${orderToBook.address.pincode}&weight=${orderToBook.weight || 0.5}&cod=${codQuery}`;
+      const data = await shiprocket.rawRequest(endpoint, 'GET', headers);
+      const rawCouriers = data?.data?.available_courier_companies || [];
+      couriersList = rawCouriers.map((c: any) => ({
+        courierId: c.courier_company_id,
+        courierName: c.courier_name,
+        rate: parseFloat(c.rate || '90.00'),
+        eta: c.etd || '3-4 Days',
+        rating: parseFloat(c.rating || '4.2'),
+        cod: !!c.cod,
+        minWeight: parseFloat(c.min_weight || '0.5')
+      }));
+    } catch (err: any) {
+      console.error('Priority booking live serviceability query failed:', err.message || err);
+      return res.status(400).json({
+        success: false,
+        status: 'pending',
+        error: `Shiprocket serviceability check failed: ${formatShiprocketError(err)}`
+      });
     }
 
     if (couriersList.length === 0) {
-      couriersList = [
-        { courierId: 201, courierName: 'BlueDart Air Premium', rate: 145.00, eta: '1 Day', rating: 4.9, cod: true, minWeight: 0.5 },
-        { courierId: 202, courierName: 'BlueDart Surface 2KG', rate: 85.00, eta: '3 Days', rating: 4.5, cod: true, minWeight: 0.5 },
-        { courierId: 203, courierName: 'Delhivery Express (Air)', rate: 110.00, eta: '1-2 Days', rating: 4.7, cod: true, minWeight: 0.5 },
-        { courierId: 204, courierName: 'Delhivery Surface', rate: 65.00, eta: '4 Days', rating: 4.3, cod: true, minWeight: 0.5 },
-        { courierId: 205, courierName: 'DTDC Air Express', rate: 95.00, eta: '2 Days', rating: 4.4, cod: true, minWeight: 0.5 },
-        { courierId: 206, courierName: 'DTDC Surface Standard', rate: 58.00, eta: '5 Days', rating: 4.0, cod: true, minWeight: 0.5 },
-        { courierId: 207, courierName: 'Shadowfax Local Standard', rate: 48.00, eta: '3 Days', rating: 4.2, cod: true, minWeight: 0.5 },
-        { courierId: 208, courierName: 'India Post Speed Post', rate: 40.00, eta: '7 Days', rating: 3.9, cod: true, minWeight: 0.5 },
-        { courierId: 209, courierName: 'Dappers', rate: 45.00, eta: '2 Days', rating: 4.8, cod: true, minWeight: 0.5 }
-      ];
+      return res.status(400).json({
+        success: false,
+        status: 'pending',
+        error: `No serviceable Shiprocket couriers available for delivery pincode ${orderToBook.address.pincode}. Order was not booked.`
+      });
     }
 
-    // 2 & 3. Select couriers via separate, configuration-driven Priority Courier module
+    // 2 & 3. Select couriers via configuration-driven Priority Courier module
     const priorityPlan = selectPriorityCourierPlan(orderToBook, couriersList);
     const priorityCourierCandidates = priorityPlan.candidates;
 
     if (priorityCourierCandidates.length === 0) {
       return res.status(400).json({
         success: false,
-        error: `No serviceable courier partners could be found for Pincode ${orderToBook.address.pincode} matching the priority sequence.`,
+        status: 'pending',
+        error: `No serviceable courier partners could be found in Shiprocket for Pincode ${orderToBook.address.pincode} matching the priority sequence.`,
         skippedTiers: priorityPlan.skippedTiers
       });
     }
@@ -5028,22 +5128,40 @@ app.post('/api/shiprocket/order/priority-book', async (req, res) => {
     let bookedRate = priorityCourierCandidates[0].rate;
     let assignedTierDetails: any = null;
 
-    // 4. Book the chosen Courier
-    if (isLiveConfigured()) {
-      try {
-        const headers = await getShiprocketAuthHeaders();
+    // 4. Book the chosen Courier in Live Shiprocket ONLY
+    try {
+      const rawAddr = (orderToBook.address?.address || '').trim();
+      const safeAddr = rawAddr.length >= 10 ? rawAddr.slice(0, 180) : `${rawAddr} Main Road`.slice(0, 180);
+      const rawName = (orderToBook.customerName || orderToBook.address?.name || 'Customer').trim();
+      const safeName = rawName.length >= 3 ? rawName.slice(0, 50) : `${rawName} Customer`;
+      const safePhone = cleanPhoneNumber(orderToBook.address?.phone);
+      const safePincode = String(orderToBook.address?.pincode || '').trim();
+      const safeTotal = Math.max(1, Number(orderToBook.totalAmount) || 100);
 
-        const rawAddr = (orderToBook.address?.address || '').trim();
-        const safeAddr = rawAddr.length >= 10 ? rawAddr.slice(0, 180) : `${rawAddr} Main Road`.slice(0, 180);
-        const rawName = (orderToBook.customerName || orderToBook.address?.name || 'Customer').trim();
-        const safeName = rawName.length >= 3 ? rawName.slice(0, 50) : `${rawName} Customer`;
-        const safePhone = cleanPhoneNumber(orderToBook.address?.phone);
-        const safePincode = String(orderToBook.address?.pincode || '').trim();
-        const safeTotal = Math.max(1, Number(orderToBook.totalAmount) || 100);
+      const isPrepaid = orderToBook.paymentMethod && orderToBook.paymentMethod.toUpperCase() === 'PREPAID';
+      // Deterministic channel order_id (no timestamp suffix) so Shiprocket never creates duplicate orders for the same orderNumber
+      const cleanOrderNumber = String(orderToBook.orderNumber || orderToBook.id).trim();
+      const deterministicOrderId = cleanOrderNumber.startsWith('DF-') ? cleanOrderNumber : `DF-${cleanOrderNumber}`;
 
-        const isPrepaid = orderToBook.paymentMethod && orderToBook.paymentMethod.toUpperCase() === 'PREPAID';
+      const existingSrOrderId = String(orderToBook.shiprocketOrderId || '').trim();
+      const existingShipmentId = String(orderToBook.shipmentId || '').trim();
+      const hasValidExistingSrIds =
+        existingSrOrderId &&
+        existingShipmentId &&
+        !existingSrOrderId.startsWith('sim_') &&
+        !existingSrOrderId.startsWith('SR-') &&
+        !existingShipmentId.startsWith('sim_') &&
+        !existingShipmentId.startsWith('SM-') &&
+        !existingShipmentId.startsWith('SHP-') &&
+        !isNaN(Number(existingShipmentId));
+
+      if (hasValidExistingSrIds) {
+        shiprocketId = existingSrOrderId;
+        shipmentId = existingShipmentId;
+        console.log(`[Shiprocket Priority Booking] Reusing existing Shiprocket order ${shiprocketId} / shipment ${shipmentId} to prevent duplicate order creation.`);
+      } else {
         const orderPayload = {
-          order_id: `DF-${orderToBook.orderNumber}-${Date.now()}`,
+          order_id: deterministicOrderId,
           order_date: orderToBook.date,
           pickup_location: resolvedPickupLocation.name,
           billing_customer_name: safeName,
@@ -5057,7 +5175,7 @@ app.post('/api/shiprocket/order/priority-book', async (req, res) => {
           billing_phone: safePhone,
           shipping_is_billing: true,
           order_items: (orderToBook.items && orderToBook.items.length > 0)
-            ? orderToBook.items.map(i => ({
+            ? orderToBook.items.map((i: any) => ({
                 name: (i.name || 'Electronic Gadget').slice(0, 80),
                 sku: (i.sku || 'SKU-ELEC').slice(0, 50),
                 units: i.quantity || 1,
@@ -5084,137 +5202,142 @@ app.post('/api/shiprocket/order/priority-book', async (req, res) => {
         if (!shipmentId || !shiprocketId) {
           const createErrMsg = createData?.message || createData?.response?.data?.message || createData?.error || (createData?.errors ? JSON.stringify(createData.errors) : 'Shiprocket order creation failed.');
           console.error('[Shiprocket Priority Booking Failed] Order creation rejected:', createErrMsg);
-          orderToBook.status = 'failed';
+          orderToBook.status = 'pending';
           orderToBook.errorMessage = createErrMsg;
           await saveSingleOrderToDb(orderToBook);
           return res.status(400).json({
             success: false,
-            status: 'failed',
+            status: 'pending',
             error: createErrMsg
           });
         }
+      }
 
-        // Execute AWB assignment with priority fallback and auto-assign fallback
-        const awbResult = await executePriorityAwbAssignment({
-          order: orderToBook,
-          shipmentId,
-          candidates: priorityCourierCandidates,
-          skippedTiers: priorityPlan.skippedTiers,
-          pickupLocationConfirmed: resolvedPickupLocation.name,
-          assignAwbFn: async (courierId) => {
-            const awbPayload: any = { shipment_id: shipmentId };
-            if (courierId) {
-              awbPayload.courier_id = courierId;
-            }
-            const awbData = await shiprocket.rawRequest('/courier/assign/awb', 'POST', headers, awbPayload);
-            const foundAwb = awbData?.response?.data?.awb_code || awbData?.data?.awb_code || awbData?.awb_code || awbData?.response?.awb_code || '';
-            const cName = awbData?.response?.data?.courier_name || '';
-            const cId = awbData?.response?.data?.courier_company_id || courierId;
-            const errStr = awbData?.response?.data?.awb_assign_error || awbData?.message || awbData?.response?.data?.message || (!foundAwb ? 'Empty AWB code returned' : undefined);
-
-            return {
-              success: Boolean(foundAwb),
-              awbCode: foundAwb,
-              courierName: cName,
-              courierCompanyId: cId,
-              error: errStr
-            };
+      // Execute AWB assignment with priority fallback and auto-assign fallback
+      const awbResult = await executePriorityAwbAssignment({
+        order: orderToBook,
+        shipmentId,
+        candidates: priorityCourierCandidates,
+        skippedTiers: priorityPlan.skippedTiers,
+        pickupLocationConfirmed: resolvedPickupLocation.name,
+        assignAwbFn: async (courierId) => {
+          const awbPayload: any = { shipment_id: shipmentId };
+          if (courierId) {
+            awbPayload.courier_id = courierId;
           }
-        });
+          const awbData = await shiprocket.rawRequest('/courier/assign/awb', 'POST', headers, awbPayload);
+          const foundAwb = awbData?.response?.data?.awb_code || awbData?.data?.awb_code || awbData?.awb_code || awbData?.response?.awb_code || '';
+          const cName = awbData?.response?.data?.courier_name || '';
+          const cId = awbData?.response?.data?.courier_company_id || courierId;
+          const errStr = awbData?.response?.data?.awb_assign_error || awbData?.message || awbData?.response?.data?.message || (!foundAwb ? 'Empty AWB code returned' : undefined);
 
-        if (awbResult.success && awbResult.awbCode) {
-          awbCode = awbResult.awbCode;
-          assignedCourierName = awbResult.assignedCourierName || assignedCourierName;
-          successfulCourierId = awbResult.assignedCourierId || successfulCourierId;
-          bookedRate = awbResult.rate || bookedRate;
-          assignedTierDetails = {
-            tierName: awbResult.assignedTierName,
-            tierRank: awbResult.assignedTierRank,
-            isAutoAssigned: awbResult.isAutoAssigned,
-            orderType: awbResult.orderType
+          return {
+            success: Boolean(foundAwb),
+            awbCode: foundAwb,
+            courierName: cName,
+            courierCompanyId: cId,
+            error: errStr
           };
-        } else {
-          const lastAwbError = awbResult.lastError || 'AWB assignment failed across all prioritized tiers.';
-          console.error('[Shiprocket Priority Booking Failed] All fallback sequence couriers AND Auto-Assign failed.');
-          try {
-             await shiprocket.rawRequest('/orders/cancel', 'POST', headers, { ids: [Number(shiprocketId) || shiprocketId] });
-             console.log(`[Shiprocket] Successfully cancelled priority order ${shiprocketId} due to AWB fallback exhaustion.`);
-          } catch (cancelErr) {
-             console.error(`[Shiprocket] Failed to cancel priority order ${shiprocketId}:`, cancelErr);
-          }
-          
-          orderToBook.status = 'failed';
-          const isWalletError = lastAwbError && (
-            lastAwbError.toLowerCase().includes('recharge') ||
-            lastAwbError.toLowerCase().includes('balance') ||
-            lastAwbError.toLowerCase().includes('wallet')
-          );
-          if (isWalletError) {
-            orderToBook.errorMessage = `Shiprocket Wallet Recharge Required: ${lastAwbError}. Please recharge your Shiprocket wallet (minimum ₹100 required) on shiprocket.in.`;
-          } else {
-            orderToBook.errorMessage = `AWB Assignment Failed across all prioritized couriers AND Auto-Assign. Last error: ${lastAwbError}`;
-          }
-          orderToBook.shiprocketOrderId = undefined;
-          orderToBook.shipmentId = undefined;
-          await saveSingleOrderToDb(orderToBook);
-          return res.status(400).json({
-            success: false,
-            status: 'failed',
-            error: orderToBook.errorMessage,
-            skippedTiers: awbResult.skippedTiers,
-            auditTrail: awbResult.auditTrail
-          });
+        }
+      });
+
+      if (awbResult.success && awbResult.awbCode) {
+        awbCode = awbResult.awbCode;
+        assignedCourierName = awbResult.assignedCourierName || assignedCourierName;
+        successfulCourierId = awbResult.assignedCourierId || successfulCourierId;
+        bookedRate = awbResult.rate || bookedRate;
+        assignedTierDetails = {
+          tierName: awbResult.assignedTierName,
+          tierRank: awbResult.assignedTierRank,
+          isAutoAssigned: awbResult.isAutoAssigned,
+          orderType: awbResult.orderType
+        };
+      } else {
+        const lastAwbError = awbResult.lastError || 'AWB assignment failed across all prioritized tiers.';
+        console.error('[Shiprocket Priority Booking Failed] All fallback sequence couriers AND Auto-Assign failed.');
+        try {
+          await shiprocket.rawRequest('/orders/cancel', 'POST', headers, { ids: [Number(shiprocketId) || shiprocketId] });
+          console.log(`[Shiprocket] Successfully cancelled priority order ${shiprocketId} due to AWB fallback exhaustion.`);
+        } catch (cancelErr) {
+          console.error(`[Shiprocket] Failed to cancel priority order ${shiprocketId}:`, cancelErr);
         }
 
-        // Issue 2: Attempt label generation from official Shiprocket API with retry mechanism
-        // Do NOT cancel the order if label generation is delayed!
-        const labelResult = await generateOrFetchShiprocketLabel(
-          headers,
-          shipmentId,
-          orderToBook.orderNumber || orderToBook.id,
-          3,
-          1500
+        orderToBook.status = 'pending';
+        const isWalletError = lastAwbError && (
+          lastAwbError.toLowerCase().includes('recharge') ||
+          lastAwbError.toLowerCase().includes('balance') ||
+          lastAwbError.toLowerCase().includes('wallet')
         );
-
-        if (labelResult.success && labelResult.labelUrl) {
-          labelUrl = labelResult.labelUrl;
-          labelGenerated = true;
-          console.log(`[Shiprocket] Official label generated successfully during priority booking: ${labelUrl}`);
+        if (isWalletError) {
+          orderToBook.errorMessage = `Shiprocket Wallet Recharge Required: ${lastAwbError}. Please recharge your Shiprocket wallet (minimum ₹100 required) on shiprocket.in.`;
         } else {
-          console.log(`[Shiprocket] Priority booking label deferred: ${labelResult.error}. Generating instant thermal label.`);
-          labelUrl = orderToBook.labelUrl || `/api/shiprocket/download-label-pdf?shipmentId=${encodeURIComponent(shipmentId)}&orderId=${encodeURIComponent(orderToBook.id)}`;
-          labelGenerated = true;
+          orderToBook.errorMessage = `AWB Assignment Failed in Shiprocket: ${lastAwbError}`;
+        }
+        orderToBook.shiprocketOrderId = undefined;
+        orderToBook.shipmentId = undefined;
+        orderToBook.awbCode = undefined;
+        orderToBook.labelUrl = undefined;
+        await saveSingleOrderToDb(orderToBook);
+        return res.status(400).json({
+          success: false,
+          status: 'pending',
+          error: orderToBook.errorMessage,
+          skippedTiers: awbResult.skippedTiers,
+          auditTrail: awbResult.auditTrail
+        });
+      }
+
+      // Strict Official Shiprocket Label Requirement:
+      // Must obtain the official Shiprocket label PDF URL from /courier/generate/label.
+      // Otherwise, cancel the booking in Shiprocket and do NOT mark the order as booked!
+      const labelResult = await generateOrFetchShiprocketLabel(
+        headers,
+        shipmentId,
+        orderToBook.orderNumber || orderToBook.id,
+        4,
+        1500
+      );
+
+      if (labelResult.success && labelResult.labelUrl && isOfficialShiprocketLabelUrl(labelResult.labelUrl)) {
+        labelUrl = labelResult.labelUrl;
+        labelGenerated = true;
+        console.log(`[Shiprocket] Official Shiprocket label generated successfully during priority booking: ${labelUrl}`);
+      } else {
+        const labelErrMsg = labelResult.error || 'Official Shiprocket label could not be generated.';
+        console.error(`[Shiprocket Priority Booking Rolled Back] Official Shiprocket label failed (${labelErrMsg}). Cancelling order ${shiprocketId} so order is not booked without a Shiprocket label.`);
+        try {
+          await shiprocket.rawRequest('/orders/cancel', 'POST', headers, { ids: [Number(shiprocketId) || shiprocketId] });
+        } catch (cancelErr) {
+          console.error(`[Shiprocket] Failed to cancel order ${shiprocketId} after label failure:`, cancelErr);
         }
 
-      } catch (liveErr: any) {
-        console.error('[Shiprocket Priority Booking] Live flow encountered error:', liveErr.message || liveErr);
-        orderToBook.status = 'failed';
-        orderToBook.errorMessage = `Live booking failed: ${liveErr.message || liveErr}`;
+        orderToBook.status = 'pending';
+        orderToBook.errorMessage = `Order not booked: Official Shiprocket label could not be generated (${labelErrMsg}).`;
+        orderToBook.shiprocketOrderId = undefined;
+        orderToBook.shipmentId = undefined;
+        orderToBook.awbCode = undefined;
+        orderToBook.labelUrl = undefined;
         await saveSingleOrderToDb(orderToBook);
-        return res.status(500).json({
+
+        return res.status(400).json({
           success: false,
-          status: 'failed',
+          status: 'pending',
           error: orderToBook.errorMessage
         });
       }
-    } else {
-      // Simulation flow
-      console.log(`[Shiprocket Simulation] 1. Creating ad-hoc order for ${orderToBook.orderNumber}...`);
-      await new Promise(r => setTimeout(r, 400));
-      shiprocketId = `sim_order_${Date.now()}`;
-      shipmentId = `sim_ship_${Date.now()}`;
-
-      console.log(`[Shiprocket Simulation] 2. Assigning AWB via Priority Courier: ${assignedCourierName}...`);
-      await new Promise(r => setTimeout(r, 450));
-      awbCode = `AWB${Math.floor(Math.random() * 1000000000)}`;
-
-      console.log(`[Shiprocket Simulation] 3. Generating shipping label...`);
-      await new Promise(r => setTimeout(r, 450));
-      labelUrl = `/api/shiprocket/download-label-pdf?shipmentId=${encodeURIComponent(shipmentId)}`;
-      labelGenerated = true;
+    } catch (liveErr: any) {
+      console.error('[Shiprocket Priority Booking] Live flow encountered error:', liveErr.message || liveErr);
+      orderToBook.status = 'pending';
+      orderToBook.errorMessage = `Live Shiprocket booking failed: ${liveErr.message || liveErr}`;
+      await saveSingleOrderToDb(orderToBook);
+      return res.status(500).json({
+        success: false,
+        status: 'pending',
+        error: orderToBook.errorMessage
+      });
     }
 
-    // Update local persistent db - Status is 'booked'
+    // Update local persistent db - Status is 'booked' ONLY because both Shiprocket booking AND official Shiprocket label succeeded
     orderToBook.status = 'booked';
     orderToBook.errorMessage = null;
     orderToBook.shiprocketOrderId = String(shiprocketId);
@@ -5224,20 +5347,20 @@ app.post('/api/shiprocket/order/priority-book', async (req, res) => {
     orderToBook.assignedEmployeeId = assignedEmployeeId || orderToBook.assignedEmployeeId;
     orderToBook.pickupLocation = resolvedPickupLocation.name;
     orderToBook.pickupAddress = resolvedPickupLocation;
-    orderToBook.labelUrl = labelGenerated ? labelUrl : undefined;
+    orderToBook.labelUrl = labelUrl;
     const assignedTierSummary = assignedTierDetails ? `${assignedTierDetails.tierName} (Tier ${assignedTierDetails.tierRank})` : 'Priority Candidate';
     const skippedSummary = priorityPlan.skippedTiers.length > 0 
       ? priorityPlan.skippedTiers.map(s => `[Tier ${s.tierRank} (${s.tierName}): ${s.reason}]`).join('; ')
       : 'None';
     
-    console.log(`[Priority Order Completed] Order ${orderToBook.orderNumber || orderToBook.id}: Assigned Tier: "${assignedTierSummary}", Courier: "${assignedCourierName}" (ID: ${successfulCourierId}, Rate: ₹${bookedRate}), AWB: "${awbCode}". Skipped Tiers: ${skippedSummary}.`);
+    console.log(`[Priority Order Completed] Order ${orderToBook.orderNumber || orderToBook.id}: Assigned Tier: "${assignedTierSummary}", Courier: "${assignedCourierName}" (ID: ${successfulCourierId}, Rate: ₹${bookedRate}), AWB: "${awbCode}", Label: "${labelUrl}". Skipped Tiers: ${skippedSummary}.`);
 
     orderToBook.trackingHistory = [
       { 
         date: new Date().toISOString().replace('T', ' ').slice(0, 16), 
         status: 'Booked', 
         location: `${resolvedPickupLocation.name} (${resolvedPickupLocation.city || 'Shiprocket'})`, 
-        activity: `Shipment booked via priority match: ${assignedCourierName} [Tier: ${assignedTierSummary}]. AWB: ${awbCode}.${labelGenerated ? ' Shipping label generated.' : ' Label pending.'}` 
+        activity: `Shipment booked via priority match: ${assignedCourierName} [Tier: ${assignedTierSummary}]. AWB: ${awbCode}. Official Shiprocket label generated.` 
       }
     ];
 
@@ -5257,20 +5380,22 @@ app.post('/api/shiprocket/order/priority-book', async (req, res) => {
       pickupLocation: resolvedPickupLocation.name,
       rate: bookedRate,
       labelUrl: orderToBook.labelUrl,
-      labelGenerated,
-      labelPending: !labelGenerated
+      labelGenerated: true,
+      labelPending: false
     });
   } catch (err: any) {
     const liveErrMsg = err.message || 'Priority booking failed on Shiprocket.';
     console.error('[Shiprocket] Priority live booking failed:', liveErrMsg);
-    orderToBook.status = 'failed';
+    orderToBook.status = 'pending';
     orderToBook.errorMessage = liveErrMsg;
     await saveSingleOrderToDb(orderToBook);
     return res.status(400).json({
       success: false,
-      status: 'failed',
+      status: 'pending',
       error: liveErrMsg
     });
+  } finally {
+    lockKeys.forEach(k => inFlightShiprocketBookings.delete(k));
   }
 });
 
@@ -5387,7 +5512,7 @@ app.post('/api/shiprocket/reconcile-shipment', async (req, res) => {
   });
 });
 
-// API Route: Print shipping labels (Fetches official Shiprocket label)
+// API Route: Print shipping labels (Fetches official Shiprocket label ONLY)
 app.post('/api/shiprocket/label', async (req, res) => {
   let { shipmentId } = req.body;
   if (!shipmentId) {
@@ -5407,7 +5532,7 @@ app.post('/api/shiprocket/label', async (req, res) => {
   const orderIdentifier = matchingOrder?.orderNumber || matchingOrder?.id || shipmentId;
 
   // 1. If matching order already has an official Shiprocket label URL, return it immediately
-  if (matchingOrder?.labelUrl && (matchingOrder.labelUrl.includes('sr-core-cdn') || matchingOrder.labelUrl.includes('download-live-pdf'))) {
+  if (matchingOrder?.labelUrl && isOfficialShiprocketLabelUrl(matchingOrder.labelUrl)) {
     let finalUrl = matchingOrder.labelUrl;
     if (!finalUrl.includes('/api/shiprocket/download-live-pdf')) {
       finalUrl = `/api/shiprocket/download-live-pdf?url=${encodeURIComponent(finalUrl)}&filename=${encodeURIComponent(`Dappersfit-Label-${orderIdentifier}.pdf`)}`;
@@ -5434,8 +5559,8 @@ app.post('/api/shiprocket/label', async (req, res) => {
       }
 
       if (!isNaN(targetShipmentId) && targetShipmentId > 1000) {
-        const labelResult = await generateOrFetchShiprocketLabel(headers, targetShipmentId, orderIdentifier, 3, 1500);
-        if (labelResult.success && labelResult.labelUrl) {
+        const labelResult = await generateOrFetchShiprocketLabel(headers, targetShipmentId, orderIdentifier, 4, 1500);
+        if (labelResult.success && labelResult.labelUrl && isOfficialShiprocketLabelUrl(labelResult.labelUrl)) {
           if (matchingOrder) {
             matchingOrder.labelUrl = labelResult.labelUrl;
             await saveSingleOrderToDb(matchingOrder);
@@ -5444,31 +5569,25 @@ app.post('/api/shiprocket/label', async (req, res) => {
         }
       }
 
-      // Fallback: If Shiprocket CDN label is still pending, serve the instant thermal label PDF immediately
-      const fallbackUrl = `/api/shiprocket/download-label-pdf?shipmentId=${encodeURIComponent(shipmentId)}&filename=${encodeURIComponent(`Dappersfit-Label-${orderIdentifier}.pdf`)}`;
-      if (matchingOrder && !matchingOrder.labelUrl) {
-        matchingOrder.labelUrl = fallbackUrl;
-        await saveSingleOrderToDb(matchingOrder);
-      }
-      return res.json({
-        success: true,
-        labelUrl: fallbackUrl,
-        labelGenerated: true
+      return res.status(400).json({
+        success: false,
+        labelGenerated: false,
+        error: 'Official Shiprocket label is not available for this shipment.'
       });
     } catch (err: any) {
       console.log('[Shiprocket Label Fetch Error]:', err.message || err);
       return res.status(500).json({
         success: false,
         labelGenerated: false,
-        error: err.message || 'Failed to fetch label from Shiprocket.'
+        error: err.message || 'Failed to fetch official label from Shiprocket.'
       });
     }
   }
 
-  res.json({
-    success: true,
-    labelUrl: `/api/shiprocket/download-label-pdf?shipmentId=${encodeURIComponent(shipmentId)}&filename=${encodeURIComponent(`Dappersfit-Label-${orderIdentifier}.pdf`)}`,
-    labelGenerated: true
+  return res.status(400).json({
+    success: false,
+    labelGenerated: false,
+    error: 'Shiprocket live credentials are not configured. Official Shiprocket label cannot be retrieved.'
   });
 });
 
