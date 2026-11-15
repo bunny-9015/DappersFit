@@ -16,6 +16,12 @@ import { initializeFirestore, collection, doc, getDoc, getDocs, setDoc, deleteDo
 dotenv.config();
 
 import { renderShippingLabelHtml } from './src/utils/shippingLabelTemplate';
+import {
+  parseOrderLocally,
+  sanitizeParsedOrder,
+  cleanAddressText,
+  stripFieldLabels,
+} from './src/utils/orderParser';
 import { 
   selectPriorityCourierPlan, 
   selectCourierCandidates, 
@@ -3278,7 +3284,11 @@ function parseReplacementLocally(text: string) {
   for (const line of lines) {
     const addrMatch = line.match(/(?:address|ship to|pickup|location|street)\s*[:=-]\s*(.+)/i);
     if (addrMatch && addrMatch[1]) {
-      address = addrMatch[1].trim();
+      address = cleanAddressText(addrMatch[1].trim(), {
+        customerName,
+        phone: customerPhone,
+        pincode,
+      });
       break;
     }
   }
@@ -3462,12 +3472,24 @@ Extract structured replacement/exchange ticket data:
     });
 
     const parsedJson = JSON.parse(response.text.trim());
+    if (parsedJson.customerName) {
+      parsedJson.customerName = stripFieldLabels(parsedJson.customerName);
+    }
     if (parsedJson.customerPhone) {
       parsedJson.customerPhone = parsedJson.customerPhone.replace(/[^\d]/g, '').slice(-10);
     }
     if (!parsedJson.customerPhone) {
       const local = parseReplacementLocally(rawText);
       parsedJson.customerPhone = local.customerPhone;
+    }
+    if (parsedJson.address) {
+      parsedJson.address = cleanAddressText(parsedJson.address, {
+        customerName: parsedJson.customerName,
+        phone: parsedJson.customerPhone,
+        pincode: parsedJson.pincode,
+        city: parsedJson.city,
+        state: parsedJson.state,
+      });
     }
     return res.json({ success: true, parsed: parsedJson, source: 'gemini' });
   } catch (err: any) {
@@ -3568,120 +3590,6 @@ async function generateContentWithRetryAndFallback(contents: string, config: any
   throw lastError || new Error('All Anthropic models and retry attempts failed.');
 }
 
-function parseOrderLocally(text: string) {
-  const textClean = text.replace(/\n/g, ' ');
-  
-  // 1. Phone number (10 digits)
-  const phoneMatch = text.match(/(?:\+91|0)?[6-9]\d{9}/);
-  const phone = phoneMatch ? phoneMatch[0].replace(/^(?:\+91|0)/, '') : '';
-  
-  // 2. Pincode (6 digits)
-  const pinMatch = text.match(/\b\d{6}\b/);
-  const pincode = pinMatch ? pinMatch[0] : '';
-  
-  // 3. Name (usually first line or before the phone/address)
-  let customerName = '';
-  const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
-  if (lines.length > 0) {
-    const candidate = lines[0].replace(/^(Name|Customer|To|Ship to)\s*:\s*/i, '').trim();
-    if (candidate.length >= 2 && candidate.length < 40 && !candidate.toLowerCase().includes('pincode') && !candidate.toLowerCase().includes('address') && !candidate.toLowerCase().includes('phone') && !candidate.toLowerCase().includes('item') && !candidate.toLowerCase().includes('order')) {
-      const lower = candidate.toLowerCase();
-      if (lower !== 'unknown' && lower !== 'n/a' && lower !== 'walkin customer' && lower !== 'walk-in customer') {
-        customerName = candidate;
-      }
-    }
-  }
-
-  // 4. City & State (parse from pincode or match standard cities)
-  let city = '';
-  let state = '';
-  
-  if (pincode.startsWith('56') || textClean.toLowerCase().includes('bangalore') || textClean.toLowerCase().includes('bengaluru')) {
-    city = 'Bangalore';
-    state = 'Karnataka';
-  } else if (pincode.startsWith('50') || textClean.toLowerCase().includes('hyderabad')) {
-    city = 'Hyderabad';
-    state = 'Telangana';
-  } else if (pincode.startsWith('40') || pincode.startsWith('41') || pincode.startsWith('42') || pincode.startsWith('43')) {
-    city = textClean.toLowerCase().includes('mumbai') ? 'Mumbai' : 'Pune';
-    state = 'Maharashtra';
-  } else if (pincode.startsWith('11') || textClean.toLowerCase().includes('delhi')) {
-    city = 'Delhi';
-    state = 'Delhi';
-  } else if (pincode.startsWith('60') || textClean.toLowerCase().includes('chennai')) {
-    city = 'Chennai';
-    state = 'Tamil Nadu';
-  } else if (pincode.startsWith('70') || textClean.toLowerCase().includes('kolkata')) {
-    city = 'Kolkata';
-    state = 'West Bengal';
-  } else if (pincode.startsWith('52') || pincode.startsWith('53')) {
-    city = 'Vijayawada';
-    state = 'Andhra Pradesh';
-  }
-
-  // 5. Raw street address
-  let address = textClean
-    .replace(customerName, '')
-    .replace(phone, '')
-    .replace(pincode, '')
-    .replace(/(?:phone|mobile|pincode|pin|tel|address|name|to|ship)\s*[:\-]?/ig, '')
-    .replace(/\s+/g, ' ')
-    .trim();
-
-  if (address.length < 10) {
-    address = textClean;
-  }
-
-  // 6. Item parsing: look for lines with product name and price
-  let items: any[] = [];
-  let totalAmount = 0;
-
-  const priceMatches = [...textClean.matchAll(/(?:rs\.?|inr|₹)?\s*(\d{3,5})\b/gi)];
-  const numbers = priceMatches.map(m => parseInt(m[1])).filter(n => n >= 200 && n <= 50000);
-  
-  if (numbers.length > 0) {
-    const price = numbers[0];
-    totalAmount = price;
-    
-    let itemName = '';
-    if (textClean.toLowerCase().includes('projector')) {
-      itemName = 'Smart Portable 4K LED Projector';
-    } else if (textClean.toLowerCase().includes('drone') || textClean.toLowerCase().includes('camera')) {
-      itemName = 'Drone 4K Action Camera Ultra HD';
-    } else if (textClean.toLowerCase().includes('wash') || textClean.toLowerCase().includes('gun')) {
-      itemName = 'High-Pressure Water Wash Gun Pro';
-    } else if (textClean.toLowerCase().includes('console') || textClean.toLowerCase().includes('game')) {
-      itemName = 'Handheld Gaming Console 4K OLED';
-    } else if (textClean.toLowerCase().includes('rc') || textClean.toLowerCase().includes('car')) {
-      itemName = 'High-Speed 4WD RC Car Offroad';
-    }
-    
-    if (itemName !== '') {
-      items = [{
-        name: itemName,
-        sku: itemName.toUpperCase().replace(/\s+/g, '-').slice(0, 10),
-        quantity: 1,
-        price: price
-      }];
-    }
-  }
-
-  return {
-    customerName,
-    address: {
-      name: customerName,
-      phone,
-      address,
-      city,
-      state,
-      pincode,
-      email: customerName ? `${customerName.toLowerCase().replace(/\s+/g, '')}@gmail.com` : ''
-    },
-    items,
-    totalAmount
-  };
-}
-
 // API Route: AI raw order message parser (Gemini API server-side wrapper)
 app.post('/api/gemini/parse-order', async (req, res) => {
   const { text } = req.body;
@@ -3708,7 +3616,7 @@ ${text}
 
     // Define JSON-enforced structure as per gemini-api guidelines
     const response = await generateContentWithRetryAndFallback(prompt, {
-      systemInstruction: `You are an expert order parser for Dappersfit Logistics platform. You extract raw e-commerce messages into highly-conformed JSON. Standardize pincodes (6-digit numbers) and telephone numbers (removing spaces, leading zeros or country codes if necessary). Extract SKU from items if explicitly mentioned, or devise an elegant SKU prefix. Values must match prices explicitly mentioned. Ensure all property values match the requested schema types. CRITICAL: If customerName is missing or not explicitly present in the text, set customerName to empty string "" — NEVER generate placeholder or default names like "Unknown", "N/A", or random names.`,
+      systemInstruction: `You are an expert order parser for Dappersfit Logistics platform. You extract raw e-commerce messages into highly-conformed JSON. Standardize pincodes (6-digit numbers) and telephone numbers (removing spaces, leading zeros or country codes if necessary). Extract SKU from items if explicitly mentioned, or devise an elegant SKU prefix. Values must match prices explicitly mentioned. Ensure all property values match the requested schema types. CRITICAL: (1) NEVER include field labels such as "name:", "address:", "phone:", "pincode:", "city:", "state:", or "to:" inside any extracted field value. (2) Arrange address.address cleanly as comma-separated street/house/building/landmark/area only, WITHOUT repeating customerName, phone, city, state, or pincode inside address.address. (3) If customerName is missing or not explicitly present in the text, set customerName to empty string "" — NEVER generate placeholder or default names like "Unknown", "N/A", or random names.`,
       responseMimeType: 'application/json',
       responseSchema: {
         type: Type.OBJECT,
@@ -3748,7 +3656,7 @@ ${text}
 
     // Extract raw text safely (no method invocation as per guidelines)
     const jsonStr = response.text?.trim() || '{}';
-    const parsedOrder = JSON.parse(jsonStr);
+    const parsedOrder = sanitizeParsedOrder(JSON.parse(jsonStr));
 
     res.json({ success: true, parsedOrder });
   } catch (error: any) {
