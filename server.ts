@@ -1773,8 +1773,12 @@ app.post('/api/orders', async (req, res) => {
   res.json({ success: true, order: newOrder, orders: mockOrders });
 });
 
-// API route: Delete an order
+// API route: Delete an order (Admin only when x-user-role is supplied)
 app.delete('/api/orders/:id', async (req, res) => {
+  const callerRole = req.headers['x-user-role'];
+  if (callerRole !== undefined && String(callerRole).toLowerCase().trim() !== 'admin') {
+    return res.status(403).json({ success: false, message: 'Forbidden: Only Admin can delete orders.' });
+  }
   const { id } = req.params;
   const initialLen = mockOrders.length;
   mockOrders = mockOrders.filter(o => o && String(o.id) !== String(id));

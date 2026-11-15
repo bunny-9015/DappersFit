@@ -317,6 +317,19 @@
         <div class="menu-group-label">Operations & Catalog</div>
         <div class="menu-card">
 
+          <button id="menu-manual-booking" class="menu-item">
+            <div class="menu-item-left">
+              <div class="menu-icon-wrap gold">
+                <span class="material-symbols-outlined">rocket_launch</span>
+              </div>
+              <div>
+                <div class="menu-title">Manual Courier Dispatch</div>
+                <div class="menu-sub">Match couriers, live rates & mint AWBs</div>
+              </div>
+            </div>
+            <span class="material-symbols-outlined menu-chevron">chevron_right</span>
+          </button>
+
           <button id="menu-products" class="menu-item">
             <div class="menu-item-left">
               <div class="menu-icon-wrap">
@@ -843,6 +856,17 @@
             </select>
           </div>
           <div class="form-group">
+            <label class="form-label" for="ticket-type">Request Type</label>
+            <select id="ticket-type" class="form-control">
+              <option value="replacement">Replacement</option>
+              <option value="exchange">Size / Item Exchange</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="ticket-photo">Defect Photo (Optional)</label>
+            <input type="file" id="ticket-photo" class="form-control" accept="image/*" style="padding-top: 8px;">
+          </div>
+          <div class="form-group">
             <label class="form-label" for="ticket-reason">Reason Description</label>
             <textarea id="ticket-reason" class="form-control" style="height: 70px;" placeholder="Customer remarks..." required></textarea>
           </div>
@@ -874,7 +898,7 @@
   <script type="module" src="./firebase-service.js"></script>
 
   <!-- Main JavaScript Application Logic -->
-  <script src="./app.js?v=1.0.9"></script>
+  <script src="./app.js?v=1.2.0"></script>
 
   <!-- Service Worker Registration for PWA Offline Fast Render -->
   <script>
