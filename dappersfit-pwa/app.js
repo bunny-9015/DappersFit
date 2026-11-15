@@ -300,6 +300,14 @@
       '78': { state: 'Assam', city: 'Guwahati' },
       '80': { state: 'Bihar', city: 'Patna' }
     },
+    knownStates: [
+      'Andhra Pradesh', 'Arunachal Pradesh', 'Assam', 'Bihar', 'Chhattisgarh',
+      'Goa', 'Gujarat', 'Haryana', 'Himachal Pradesh', 'Jharkhand', 'Karnataka',
+      'Kerala', 'Madhya Pradesh', 'Maharashtra', 'Manipur', 'Meghalaya', 'Mizoram',
+      'Nagaland', 'Odisha', 'Punjab', 'Rajasthan', 'Sikkim', 'Tamil Nadu',
+      'Telangana', 'Tripura', 'Uttar Pradesh', 'Uttarakhand', 'West Bengal',
+      'Delhi', 'New Delhi', 'Chandigarh', 'Puducherry', 'Jammu and Kashmir', 'Ladakh'
+    ],
     parse(text) {
       if (!text || typeof text !== 'string') return null;
       const clean = text.trim();
@@ -315,74 +323,212 @@
         paymentMethod: 'Cash On Delivery (COD)'
       };
 
-      // 1. Phone extraction (10 digits, optional +91 or 0 prefix)
-      const phoneMatch = clean.match(/(?:\+91[\s-]?)?[6-9]\d{9}\b/);
-      if (phoneMatch) {
-        res.phone = phoneMatch[0].replace(/\D/g, '').slice(-10);
+      const rawLines = clean
+        .split(/\r?\n/)
+        .map(l => l.trim())
+        .filter(Boolean);
+
+      const addressParts = [];
+      const unconsumedLines = [];
+
+      // Pass 1: Extract explicit labeled fields so labels like "name:", "phone:", "address:" never leak into address
+      for (const line of rawLines) {
+        let m;
+        if ((m = line.match(/^(?:customer\s*)?name\s*[:=-]\s*(.+)$/i))) {
+          if (!res.customerName) res.customerName = m[1].trim();
+          continue;
+        }
+        if ((m = line.match(/^(?:phone|mobile|mob|contact|ph|tel|whatsapp|number|no)\s*[:=-]\s*(.+)$/i))) {
+          const digits = m[1].replace(/\D/g, '');
+          if (digits.length >= 10 && !res.phone) res.phone = digits.slice(-10);
+          continue;
+        }
+        if ((m = line.match(/^(?:address|addr|delivery\s*address|shipping\s*address|full\s*address)\s*[:=-]\s*(.+)$/i))) {
+          const val = m[1].trim();
+          if (val) addressParts.push(val);
+          continue;
+        }
+        if ((m = line.match(/^(?:landmark|near)\s*[:=-]\s*(.+)$/i))) {
+          const val = m[1].trim();
+          if (val) addressParts.push(`Near ${val}`);
+          continue;
+        }
+        if ((m = line.match(/^(?:city|town|district)\s*[:=-]\s*(.+)$/i))) {
+          if (!res.city) res.city = m[1].trim();
+          continue;
+        }
+        if ((m = line.match(/^(?:state|province)\s*[:=-]\s*(.+)$/i))) {
+          res.state = m[1].trim() || 'India';
+          continue;
+        }
+        if ((m = line.match(/^(?:pin|pincode|pin\s*code|zip|postal(?:\s*code)?)\s*[:=-]\s*(.+)$/i))) {
+          const pin = m[1].match(/\b[1-9]\d{5}\b/);
+          if (pin && !res.pincode) res.pincode = pin[0];
+          continue;
+        }
+        if ((m = line.match(/^(?:item|product|sku|order\s*item)\s*[:=-]\s*(.+)$/i))) {
+          if (!res.itemName) res.itemName = m[1].trim();
+          continue;
+        }
+        if ((m = line.match(/^(?:amount|price|total|cod\s*amount|rs|inr)\s*[:=-]\s*(.+)$/i))) {
+          const amt = m[1].match(/\d{2,6}/);
+          if (amt && !res.amount) res.amount = amt[0];
+          continue;
+        }
+        if ((m = line.match(/^(?:payment|payment\s*mode|mode|pay)\s*[:=-]\s*(.+)$/i))) {
+          res.paymentMethod = /prepaid|online|gpay|phonepe|upi|paid/i.test(m[1])
+            ? 'Prepaid'
+            : 'Cash On Delivery (COD)';
+          continue;
+        }
+        unconsumedLines.push(line);
       }
 
-      // 2. Pincode extraction (6 digits)
-      const pinMatch = clean.match(/\b[1-9]\d{5}\b/);
-      if (pinMatch) {
-        res.pincode = pinMatch[0];
+      // 1. Phone extraction fallback (10 digits, optional +91 or 0 prefix)
+      if (!res.phone) {
+        const phoneMatch = clean.match(/(?:\+91[\s-]?)?[6-9]\d{9}\b/);
+        if (phoneMatch) {
+          res.phone = phoneMatch[0].replace(/\D/g, '').slice(-10);
+        }
+      }
+
+      // 2. Pincode extraction fallback (6 digits)
+      if (!res.pincode) {
+        const pinMatch = clean.match(/\b[1-9]\d{5}\b/);
+        if (pinMatch) {
+          res.pincode = pinMatch[0];
+        }
+      }
+      if (res.pincode) {
         const prefix = res.pincode.slice(0, 2);
         if (this.pincodeMap[prefix]) {
-          res.city = this.pincodeMap[prefix].city;
-          res.state = this.pincodeMap[prefix].state;
+          if (!res.city) res.city = this.pincodeMap[prefix].city;
+          if (!res.state || res.state === 'India') res.state = this.pincodeMap[prefix].state;
         }
       }
 
-      // 3. Price / Amount extraction
-      const priceMatch = clean.match(/(?:(?:rs\.?|inr|₹|amount|price)[\s:]*(\d{3,6}))|(?:\b(\d{3,6})\s*(?:rs|cod|inr))/i);
-      if (priceMatch) {
-        res.amount = priceMatch[1] || priceMatch[2] || '';
+      // 3. Price / Amount extraction fallback
+      if (!res.amount) {
+        const priceMatch = clean.match(/(?:(?:rs\.?|inr|₹|amount|price)[\s:]*(\d{3,6}))|(?:\b(\d{3,6})\s*(?:rs|cod|inr))/i);
+        if (priceMatch) {
+          res.amount = priceMatch[1] || priceMatch[2] || '';
+        }
       }
 
-      // 4. Payment method
-      if (/prepaid|online|gpay|phonepe|paid/i.test(clean)) {
+      // 4. Payment method fallback
+      if (/prepaid|online|gpay|phonepe|upi|paid/i.test(clean)) {
         res.paymentMethod = 'Prepaid';
-      } else {
-        res.paymentMethod = 'Cash On Delivery (COD)';
       }
 
-      // 5. City recognition from known cities
-      for (const city of this.knownCities) {
-        const reg = new RegExp('\\b' + city + '\\b', 'i');
-        if (reg.test(clean)) {
-          res.city = city;
-          break;
+      // 5. State recognition from known Indian states
+      if (!res.state || res.state === 'India') {
+        for (const st of this.knownStates) {
+          const reg = new RegExp('\\b' + st.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b', 'i');
+          if (reg.test(clean)) {
+            res.state = st;
+            break;
+          }
         }
       }
 
-      // 6. Name extraction
-      const lines = clean.split(/[\n,]/).map(l => l.trim()).filter(Boolean);
-      for (const line of lines) {
-        if (!/\d/.test(line) && line.length > 2 && line.length < 35 && !/^(name|phone|call|address|rs|cod|order)/i.test(line)) {
-          res.customerName = line.replace(/^(name\s*[:=]\s*)/i, '').trim();
-          break;
+      // 6. City recognition from known cities
+      if (!res.city) {
+        for (const city of this.knownCities) {
+          const reg = new RegExp('\\b' + city + '\\b', 'i');
+          if (reg.test(clean)) {
+            res.city = city;
+            break;
+          }
         }
       }
 
-      // 7. Product / Item extraction
+      // 7. Customer Name extraction fallback (from unconsumed lines)
+      const splitTokens = (unconsumedLines.length > 0 ? unconsumedLines : rawLines)
+        .flatMap(l => l.split(','))
+        .map(l => l.trim())
+        .filter(Boolean);
+
+      if (!res.customerName) {
+        for (const line of splitTokens) {
+          const cleanedLine = line.replace(/^(?:customer\s*)?name\s*[:=-]\s*/i, '').trim();
+          if (
+            cleanedLine &&
+            !/\d/.test(cleanedLine) &&
+            cleanedLine.length > 2 &&
+            cleanedLine.length < 40 &&
+            !/^(phone|mobile|call|address|addr|city|state|pin|pincode|rs|cod|prepaid|order|item|product|landmark)\b/i.test(cleanedLine) &&
+            cleanedLine.toLowerCase() !== (res.city || '').toLowerCase() &&
+            cleanedLine.toLowerCase() !== (res.state || '').toLowerCase()
+          ) {
+            res.customerName = cleanedLine;
+            break;
+          }
+        }
+      }
+
+      // 8. Product / Item extraction fallback
       const productKeywords = [
         'drone', 'camera', 'watch', 'smartwatch', 'shirt', 't-shirt', 'hoodie', 'tshirt',
         'jacket', 'shoes', 'boots', 'cargo', 'jeans', 'perfume', 'sunglasses', 'glasses',
         'blazer', 'suit', 'bag', 'backpack', 'ring', 'necklace', 'wallet'
       ];
-      for (const kw of productKeywords) {
-        const reg = new RegExp('(?:\\b\\d+\\s*(?:x|piece|pcs|wg)?\\s*)?([^,\\n]*?' + kw + '[^,\\n]*)', 'i');
-        const match = clean.match(reg);
-        if (match) {
-          res.itemName = match[1].replace(/for\s+rs.*/i, '').trim();
-          break;
+      if (!res.itemName) {
+        for (const kw of productKeywords) {
+          const reg = new RegExp('(?:\\b\\d+\\s*(?:x|piece|pcs|wg)?\\s*)?([^,\\n]*?' + kw + '[^,\\n]*)', 'i');
+          const match = clean.match(reg);
+          if (match) {
+            res.itemName = match[1].replace(/^(?:item|product|sku)\s*[:=-]\s*/i, '').replace(/for\s+rs.*/i, '').trim();
+            break;
+          }
         }
       }
       if (!res.itemName) res.itemName = 'Drone 4K Camera Ultra HD';
 
-      // 8. Address line construction
-      res.address = lines.filter(l => !l.includes(res.phone) && l !== res.customerName && !l.includes(res.amount)).slice(0, 3).join(', ');
-      if (!res.address) res.address = clean.slice(0, 100);
+      // 9. Clean & Arrange Address (never include name:, phone:, amount, or duplicate metadata)
+      const candidateParts = addressParts.length > 0 ? addressParts : unconsumedLines;
+      const cleanedParts = [];
+      const seen = new Set();
 
+      for (const rawPart of candidateParts) {
+        const subParts = rawPart.split(',').map(p => p.trim()).filter(Boolean);
+        for (let part of subParts) {
+          // Strip inline labeled prefixes if user pasted multiple fields on one line
+          part = part
+            .replace(/\b(?:customer\s*)?name\s*[:=-]\s*[^,\n]+/gi, '')
+            .replace(/\b(?:phone|mobile|mob|contact|ph|tel|whatsapp)\s*[:=-]\s*[^,\n]+/gi, '')
+            .replace(/\b(?:address|addr|delivery\s*address|shipping\s*address)\s*[:=-]\s*/gi, '')
+            .replace(/\b(?:pin|pincode|pin\s*code|zip)\s*[:=-]?\s*\d{6}\b/gi, '')
+            .replace(/\b(?:city|state|amount|price|payment|mode|item|product)\s*[:=-]\s*[^,\n]+/gi, '')
+            .trim();
+
+          if (res.phone) {
+            part = part.replace(new RegExp('(?:\\+?91[\\s-]?)?' + res.phone, 'g'), '').trim();
+          }
+          if (res.pincode) {
+            part = part.replace(new RegExp('\\b' + res.pincode + '\\b', 'g'), '').trim();
+          }
+          if (res.amount) {
+            part = part.replace(new RegExp('(?:rs\\.?|inr|₹)\\s*' + res.amount + '\\b', 'gi'), '').trim();
+          }
+
+          part = part.replace(/^[\s,:-]+|[\s,:-]+$/g, '').replace(/\s{2,}/g, ' ');
+          if (!part) continue;
+
+          const lower = part.toLowerCase();
+          if (res.customerName && lower === res.customerName.toLowerCase()) continue;
+          if (res.city && lower === res.city.toLowerCase()) continue;
+          if (res.state && res.state !== 'India' && lower === res.state.toLowerCase()) continue;
+          if (/^(cod|cash on delivery|prepaid|paid|india)$/i.test(part)) continue;
+          if (res.amount && part === String(res.amount)) continue;
+
+          if (!seen.has(lower)) {
+            seen.add(lower);
+            cleanedParts.push(part);
+          }
+        }
+      }
+
+      res.address = cleanedParts.join(', ');
       return res;
     }
   };
